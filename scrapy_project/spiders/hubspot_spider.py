@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, urljoin, urlparse
 
@@ -162,6 +163,7 @@ class HubspotSpider(scrapy.Spider):
             title = company.get("title") or website
             normalized = self._normalize_start_url(website)
             if normalized and not self._should_skip_domain(normalized):
+                self.logger.info(f"[SCAN] {normalized} → checking homepage")
                 yield scrapy.Request(
                     url=normalized,
                     callback=self.parse_home,
@@ -177,6 +179,7 @@ class HubspotSpider(scrapy.Spider):
         outbound_links = []
         outbound_seen = set()
         matched_links = []
+        prioritized_candidates = []
         for sel in response.css("a"):
             href = sel.attrib.get("href")
             text = sel.css("::text").get() or ""
@@ -200,6 +203,7 @@ class HubspotSpider(scrapy.Spider):
                 if norm not in self.ats_seen:
                     self.ats_seen.add(norm)
                     matched_links.append(full_url)
+                    prioritized_candidates.append((1, full_url, "Known ATS host"))
                     yield scrapy.Request(
                         url=full_url,
                         callback=self.parse_ats_page,
@@ -216,6 +220,8 @@ class HubspotSpider(scrapy.Spider):
                 if full_url not in seen:
                     seen.add(full_url)
                     matched_links.append(full_url)
+                    tier, reason = self._classify_career_candidate(full_url, text)
+                    prioritized_candidates.append((tier, full_url, reason))
                     yield scrapy.Request(
                         url=full_url,
                         callback=self.parse_career_page,
@@ -227,6 +233,19 @@ class HubspotSpider(scrapy.Spider):
             "items": 0,
             "top_links": outbound_links[:20],
         }
+        ordered_candidates = [c[1] for c in sorted(prioritized_candidates, key=lambda c: c[0])]
+        self.logger.info(f"[CANDIDATES] → {ordered_candidates}")
+        if ordered_candidates:
+            first = ordered_candidates[0]
+            reason = None
+            for entry in prioritized_candidates:
+                if len(entry) > 2 and entry[1] == first:
+                    reason = entry[2]
+                    break
+            if reason:
+                self.logger.info(f"[SELECTED] → {first} ({reason})")
+            else:
+                self.logger.info(f"[SELECTED] → {first}")
         self.logger.info(
             f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
             f"items={summary['items']}, top_links={summary['top_links']}"
@@ -236,15 +255,17 @@ class HubspotSpider(scrapy.Spider):
         outbound_links = self._collect_outbound_links(response)
         text = response.text.lower()
         role_match = self._evaluate_roles(text)
+        page_title = (response.css("title::text").get() or "").strip()
+        job_titles = self._extract_job_titles(response)
+        hiring_email = self._detect_hiring_email(text)
+        self.logger.info(f"[PAGE] {response.url} → title=\"{page_title}\"")
+        if job_titles:
+            self.logger.info(f"[FOUND JOB TITLES] → {job_titles[:20]}")
+        if hiring_email:
+            self.logger.info(f"[HIRING EMAIL] → {hiring_email}")
         if not role_match:
-            summary = {
-                "matched_links": 0,
-                "items": [],
-                "top_links": outbound_links[:20],
-            }
             self.logger.info(
-                f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
-                f"items={summary['items']}, top_links={summary['top_links']}"
+                f"[RESULT] {response.meta['company']} → No job pages, no roles detected"
             )
             return
 
@@ -255,14 +276,12 @@ class HubspotSpider(scrapy.Spider):
             "score": role_match["score"],
             "signals": role_match["signals"],
         }
-        summary = {
-            "matched_links": 1,
-            "items": [item],
-            "top_links": outbound_links[:20],
-        }
+        items = [item]
+        if job_titles:
+            self.logger.info(f"[FOUND JOB TITLES] → {job_titles[:20]}")
+
         self.logger.info(
-            f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
-            f"items={summary['items']}, top_links={summary['top_links']}"
+            f"[RESULT] {response.meta['company']} → {len(items)} job roles found from {response.url}"
         )
 
         yield item
@@ -281,6 +300,11 @@ class HubspotSpider(scrapy.Spider):
         items = []
         text = response.text.lower()
         role_match = self._evaluate_roles(text)
+        page_title = (response.css("title::text").get() or "").strip()
+        job_titles = self._extract_job_titles(response)
+        ats_host = self._get_host(response.url)
+        self.logger.info(f"[PAGE] {response.url} → title=\"{page_title}\"")
+        self.logger.info(f"[ATS DETECTED] → {ats_host}")
         if role_match:
             matched_links.append(response.url)
             item = {
@@ -326,10 +350,12 @@ class HubspotSpider(scrapy.Spider):
             "items": items,
             "top_links": outbound_links[:20],
         }
-        self.logger.info(
-            f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
-            f"items={summary['items']}, top_links={summary['top_links']}"
-        )
+        if job_titles:
+            self.logger.info(f"[FOUND JOB TITLES] → {job_titles[:20]}")
+        if items:
+            self.logger.info(f"[RESULT] {company} → {len(items)} job roles found")
+        else:
+            self.logger.info(f"[RESULT] {company} → No job pages, no roles detected")
 
     def _collect_outbound_links(self, response, base_url=None):
         base = base_url or response.url
@@ -389,6 +415,33 @@ class HubspotSpider(scrapy.Spider):
         path = urlparse(url).path.lower()
         hosted_signals = ["/careers", "/jobs", "/opportunities", "/open-positions", "apply"]
         return any(sig in path for sig in hosted_signals)
+
+    def _classify_career_candidate(self, url, text):
+        """Assign a tier/rationale for a career-looking link to guide logging."""
+        url_lower = url.lower()
+        text_lower = text.lower()
+
+        tier1_paths = [
+            "/careers",
+            "/jobs",
+            "/openings",
+            "/join-us",
+            "/join",
+            "/careers.html",
+            "/company/careers",
+        ]
+        tier1_text = ["careers", "jobs", "join", "work with us", "we're hiring"]
+        tier2_paths = ["/team", "/about", "/culture", "/company", "/people", "/who-we-are", "/contact"]
+
+        for path in tier1_paths:
+            if path in url_lower:
+                return 1, f"Tier1: {path}"
+        if any(label in text_lower for label in tier1_text):
+            return 1, "Tier1: anchor text"
+        for path in tier2_paths:
+            if path in url_lower:
+                return 2, f"Tier2: {path}"
+        return 3, "Tier3: general link"
 
     def _evaluate_roles(self, text):
         developer_score, developer_signals = self._score_developer(text)
@@ -643,6 +696,55 @@ class HubspotSpider(scrapy.Spider):
             return True
 
         return False
+
+    def _extract_job_titles(self, response):
+        """Collect job-like headings and list items for logging visibility."""
+        titles = []
+        seen = set()
+        heading_selectors = ["h1::text", "h2::text", "h3::text"]
+        for selector in heading_selectors:
+            for text in response.css(selector).getall():
+                cleaned = (text or "").strip()
+                if cleaned:
+                    lower = cleaned.lower()
+                    if any(term in lower for term in [
+                        "engineer",
+                        "designer",
+                        "manager",
+                        "specialist",
+                        "developer",
+                        "marketing",
+                        "sales",
+                        "coordinator",
+                        "analyst",
+                        "lead",
+                        "director",
+                        "consultant",
+                    ]):
+                        if cleaned not in seen:
+                            seen.add(cleaned)
+                            titles.append(cleaned)
+
+        for li_text in response.css("li::text").getall():
+            cleaned = (li_text or "").strip()
+            lower = cleaned.lower()
+            if cleaned and any(term in lower for term in ["apply", "role", "position", "developer", "manager", "engineer"]):
+                if cleaned not in seen:
+                    seen.add(cleaned)
+                    titles.append(cleaned)
+        return titles
+
+    def _detect_hiring_email(self, text: str):
+        """Return a hiring email phrase if present so we log email-only invites."""
+        email_match = re.search(r"[\w.+-]+@[\w.-]+", text)
+        if email_match:
+            return email_match.group(0)
+
+        tokens = ["resume", "cv", "apply"]
+        for token in tokens:
+            if token in text:
+                return token
+        return None
 
     def _resolve_dataset_path(self):
         env_path = os.getenv(DATASET_ENV_VAR)
