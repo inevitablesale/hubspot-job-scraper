@@ -23,6 +23,7 @@ python main.py
 
 ## Render (web service)
 - Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT`
+- Runtime: pin Python to **3.11.6** in Render (e.g., `pythonVersion: 3.11.6`) to avoid `greenlet` build failures on Python 3.13.
 - **postinstall.sh** should run at build time to install Python deps, Playwright Chromium, and build the React UI:
   ```bash
   #!/usr/bin/env bash
