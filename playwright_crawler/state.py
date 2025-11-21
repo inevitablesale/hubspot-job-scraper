@@ -257,8 +257,13 @@ class DomainRegistry:
         score = existing_score if existing_score is not None else 0
         score = max(score, scored.get("score", 0))
         signals = sorted(set((existing_signals or []) + scored.get("signals", [])))
-        if not scored.get("is_marketing_or_revops") and not scored.get("looks_like_hubspot_buyer"):
-            score = min(score, 40)
+
+        # Never allow non-marketing/non-HubSpot seeds to keep inflated legacy
+        # scores. Clamp them low and record why so the UI stays honest.
+        if not (scored.get("is_marketing_or_revops") or scored.get("looks_like_hubspot_buyer")):
+            score = min(score, 20)
+            signals.append("Seed capped: not marketing/RevOps aligned")
+
         return score, signals
 
     def _load_and_normalize(self):
@@ -351,14 +356,17 @@ class DomainRegistry:
             return False
         if candidate.get("score", 0) < 80:
             return False
+        hubspot_meta = candidate.get("hubspot")
+        if not isinstance(hubspot_meta, dict):
+            hubspot_meta = {}
         async with self._lock:
             existing = next((c for c in self._cache if c.get("domain") == domain), None)
             if existing:
                 existing["score"] = max(existing.get("score", 0), candidate.get("score", 0))
                 existing["last_seen"] = datetime.utcnow().isoformat() + "Z"
                 existing["signals"] = sorted(set((existing.get("signals") or []) + candidate.get("signals", [])))
-                if candidate.get("hubspot"):
-                    existing["hubspot"] = candidate["hubspot"]
+                if hubspot_meta:
+                    existing["hubspot"] = hubspot_meta
             else:
                 self._cache.append(
                     {
@@ -367,7 +375,7 @@ class DomainRegistry:
                         "categoryName": candidate.get("categoryName"),
                         "source": source,
                         "score": candidate.get("score", 0),
-                        "hubspot": candidate.get("hubspot"),
+                        "hubspot": hubspot_meta,
                         "signals": candidate.get("signals", []),
                         "maps_url": candidate.get("maps_url"),
                         "last_seen": datetime.utcnow().isoformat() + "Z",

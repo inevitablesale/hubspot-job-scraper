@@ -34,6 +34,19 @@ def _is_marketing_category(cat: str) -> bool:
     return any(k in cat for k in keywords)
 
 
+NON_TARGET_CATEGORIES = [
+    "equipment",
+    "rental",
+    "construction",
+    "storage",
+    "automotive",
+    "plumbing",
+    "hvac",
+    "landscaping",
+    "cleaning",
+]
+
+
 def score_detail(detail: Dict) -> Dict:
     signals: List[str] = []
     is_marketing = False
@@ -46,6 +59,9 @@ def score_detail(detail: Dict) -> Dict:
     tags = [t.lower() for t in detail.get("tags", [])]
 
     for cat in categories:
+        if any(block in cat for block in NON_TARGET_CATEGORIES):
+            signals.append("Non-marketing category")
+            continue
         if _is_marketing_category(cat):
             is_marketing = True
             signals.append("Marketing/consulting category")
@@ -75,6 +91,12 @@ def score_detail(detail: Dict) -> Dict:
     if "hubspot" in description:
         looks_hubspot = True
         score += 20
+
+    # If we never found a marketing/RevOps/HubSpot signal, cap the score so
+    # generic agencies (e.g., equipment rental) cannot surface as high-value.
+    if not (is_marketing or looks_hubspot):
+        score = min(score, 20)
+        signals.append("Capped: not marketing/RevOps aligned")
 
     score = min(score, 200)
 
