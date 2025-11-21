@@ -14,13 +14,21 @@ python main.py --domains-file domains.txt --output results.jsonl
 
 ## Render deployment
 
-Render expects a build command; keep it as `./postinstall.sh` (the default) so the crawler installs dependencies and sets `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` for you. If you customize the command, make sure it includes a separator, e.g.:
+Render expects a build command. The safest option is to leave it as the default:
+
+```
+./postinstall.sh
+```
+
+If you **must** inline the install, either set the variable as a prefix or add `&&` between commands:
 
 ```bash
+PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pip install -r requirements.txt
+# or
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 && pip install -r requirements.txt
 ```
 
-Without the `&&`, `export` treats the rest of the command as variable names and Render fails with `not a valid identifier`.
+**Do not run** `export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pip install -r requirements.txt` without the `&&`; Bash will treat `-r` and `requirements.txt` as identifiers and Render will fail the build with `not a valid identifier`.
 
 At runtime the crawler launches Playwright using Render's built-in Chrome channel:
 
