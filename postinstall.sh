@@ -8,8 +8,8 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 echo "=== Install Playwright browsers ==="
-# Install Chromium only (fastest + compatible with Render)
-playwright install chromium --with-deps
+# Install Chromium only (fastest + compatible with Render) without requiring sudo/apt
+python -m playwright install chromium
 
 echo "=== Building frontend ==="
 cd frontend

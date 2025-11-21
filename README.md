@@ -17,7 +17,7 @@ A Playwright-powered crawler that discovers careers pages on arbitrary websites 
 ## Running locally
 ```bash
 pip install -r requirements.txt
-python -m playwright install --with-deps chromium
+python -m playwright install chromium
 python main.py
 ```
 
@@ -35,7 +35,7 @@ python main.py
   pip install --upgrade pip
   pip install -r requirements.txt
 
-  playwright install chromium --with-deps
+  python -m playwright install chromium
 
   cd frontend
   npm install
