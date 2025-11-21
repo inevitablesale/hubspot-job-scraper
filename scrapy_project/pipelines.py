@@ -66,29 +66,45 @@ class NtfyNotifyPipeline:
         self.cache.persist()
 
     async def send_notification(self, jobs, spider):
-        grouped = {"developer": [], "consultant": [], "unknown": []}
+        grouped = {
+            "developer": [],
+            "consultant": [],
+            "architect": [],
+            "senior_consultant": [],
+            "unknown": [],
+        }
+        # Clean notification formatting
         for job in jobs:
-            grouped.get(job.get("role"), grouped["unknown"]).append(job)
+            role = job.get("role", "unknown")
+            if role not in grouped:
+                grouped["unknown"].append(job)
+            else:
+                grouped[role].append(job)
 
         message_lines = []
         for role, entries in grouped.items():
             if not entries:
                 continue
-            title = role.capitalize() if role != "unknown" else "Role"
+            title = role.replace("_", " ").title() if role != "unknown" else "Role"
             for entry in entries:
-                message_lines.extend(
-                    [
-                        f"New HubSpot {title} Role Found",
-                        f"Company: {entry['company']}",
-                        f"URL: {entry['job_page']}",
-                        f"Score: {entry.get('score', 0)}/100",
-                        "Why it matched:",
-                        *[f"- {signal}" for signal in entry.get("signals", [])],
-                        "",
-                    ]
-                )
+                block = [
+                    f"New HubSpot {title} Role",
+                    f"Company: {entry['company']}",
+                    f"Apply: {entry['job_page']}",
+                    f"Score: {entry.get('score', 0)}/100",
+                    "Why it matched:",
+                    *[f"- {signal}" for signal in entry.get("signals", [])],
+                    "",
+                ]
+                message_lines.extend(block)
 
         payload = "\n".join(message_lines).strip()
+
+        # Add Markdown header for ntfy
+        if len(jobs) > 1:
+            payload = f"## {len(jobs)} New HubSpot Roles Found\n\n" + payload
+        else:
+            payload = f"## New HubSpot Role\n\n" + payload
 
         headers = {
             "Title": f"{len(self.jobs)} New HubSpot Roles",

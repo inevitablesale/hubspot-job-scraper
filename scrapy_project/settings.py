@@ -1,3 +1,5 @@
+import os
+
 BOT_NAME = "scrapy_project"
 
 SPIDER_MODULES = ["scrapy_project.spiders"]
@@ -16,8 +18,8 @@ CONCURRENT_REQUESTS = 10
 ITEM_PIPELINES = {
     "scrapy_project.pipelines.NtfyNotifyPipeline": 1,
 }
-
-LOG_LEVEL = "ERROR"
+# Allow dynamic override for debugging
+LOG_LEVEL = os.getenv("LOG_LEVEL", "ERROR")
 
 DOWNLOADER_MIDDLEWARES = {
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,

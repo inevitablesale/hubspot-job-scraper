@@ -44,6 +44,19 @@ HUBSPOT_TECH_KEYWORDS = [
     "private app token",
 ]
 
+# Additional strong indicators of real HubSpot roles
+HUBSPOT_STRONG_SIGNALS = [
+    "hubspot certified",
+    "hubspot certification",
+    "hubspot partner",
+    "hubspot elite partner",
+    "hubspot gold partner",
+    "operations hub",
+    "hubdb",
+    "serverless functions",
+    "custom object",
+]
+
 CONSULTANT_INTENT = [
     "hubspot consultant",
     "crm consultant",
@@ -67,6 +80,20 @@ DEVELOPER_INTENT = [
     "hubspot integrations",
     "nodejs hubspot",
     "python hubspot api",
+]
+
+# Subtypes for better classification
+SENIOR_CONSULTANT_INTENT = [
+    "senior consultant",
+    "lead consultant",
+    "principal consultant",
+]
+
+ARCHITECT_INTENT = [
+    "solutions architect",
+    "revops architect",
+    "technical architect",
+    "systems architect",
 ]
 
 SKIP_DOMAINS = {
@@ -203,11 +230,40 @@ class HubspotSpider(scrapy.Spider):
         developer_score, developer_signals = self._score_developer(text)
         consultant_score, consultant_signals = self._score_consultant(text)
 
+        # Subtype classification
+        senior = any(k in text for k in SENIOR_CONSULTANT_INTENT)
+        architect = any(k in text for k in ARCHITECT_INTENT)
+        remote = "remote" in text
+        contract = "1099" in text or "contract" in text
+
         choices = []
         if developer_score >= 60:
             choices.append({"role": "developer", "score": developer_score, "signals": developer_signals})
         if consultant_score >= 50:
             choices.append({"role": "consultant", "score": consultant_score, "signals": consultant_signals})
+
+        # Apply boosters
+        for choice in choices:
+            if remote:
+                choice["score"] += 15
+                choice["signals"].append("Remote-friendly")
+            if contract:
+                choice["score"] += 10
+                choice["signals"].append("1099/Contract")
+            if architect:
+                choice["score"] += 20
+                choice["role"] = "architect"
+                choice["signals"].append("Architect-level")
+            if senior and choice["role"] == "consultant":
+                choice["score"] += 10
+                choice["role"] = "senior_consultant"
+                choice["signals"].append("Senior Consultant Fit")
+
+        # Add strong HubSpot signals
+        for choice in choices:
+            if any(sig in text for sig in HUBSPOT_STRONG_SIGNALS):
+                choice["score"] += 10
+                choice["signals"].append("Strong HubSpot Expertise Signal")
 
         if not choices:
             return None
@@ -225,6 +281,9 @@ class HubspotSpider(scrapy.Spider):
             text,
             [
                 (HUBSPOT_TECH_KEYWORDS, 25, "HubSpot mentioned"),
+                (HUBSPOT_STRONG_SIGNALS, 15, "HubSpot strong signals"),
+                (["rss", "atom", "feed", "xml"], 5, "Job feed (RSS/XML)"),
+                (["remote", "distributed"], 10, "Remote-role"),
                 (["cms hub"], 25, "CMS Hub"),
                 (
                     [
@@ -258,6 +317,9 @@ class HubspotSpider(scrapy.Spider):
             text,
             [
                 (HUBSPOT_TECH_KEYWORDS, 25, "HubSpot mentioned"),
+                (HUBSPOT_STRONG_SIGNALS, 15, "HubSpot strong signals"),
+                (["rss", "atom", "feed", "xml"], 5, "Job feed (RSS/XML)"),
+                (["remote", "distributed"], 10, "Remote-role"),
                 (
                     ["revops", "marketing ops", "mops", "revenue operations"],
                     20,
@@ -280,6 +342,12 @@ class HubspotSpider(scrapy.Spider):
                 ),
             ],
         )
+
+        # Skip recruiter agencies unless explicitly allowed
+        if "agency" in text or "staffing" in text or "recruiting" in text:
+            if not os.getenv("ALLOW_AGENCIES"):
+                return 0, []
+            signals.append("Agency Allowed")
 
         return score, signals
 
