@@ -23,14 +23,28 @@ python main.py
 
 ## Render (web service)
 - Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT`
-- Add a build step (postinstall):
-  ```
+- **postinstall.sh** should run at build time to install Python deps, Playwright Chromium, and build the React UI:
+  ```bash
+  #!/usr/bin/env bash
+  set -euxo pipefail
+
+  pip install --upgrade pip
+  pip install -r requirements.txt
+
   python -m playwright install --with-deps chromium
+
+  cd frontend
+  npm install
+  npm run build
+  cd ..
+
+  mkdir -p static
+  cp -r frontend/dist/* static/
   ```
 - Trigger a run: `POST https://<your-service>/run`
 - Check status: `GET https://<your-service>/status`
 - Health: `GET https://<your-service>/health`
-- Live logs (WebSocket): `wss://<your-service>/ws/logs`
+- Live logs (WebSocket over TLS): `wss://<your-service>/ws/logs`
 - Results API: `GET https://<your-service>/results`
 
 ## Render (background worker)
