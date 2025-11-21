@@ -19,6 +19,19 @@ ITEM_PIPELINES = {
 
 LOG_LEVEL = "ERROR"
 
+DOWNLOADER_MIDDLEWARES = {
+    "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,
+    "scrapy_project.middlewares.ExponentialBackoffRetryMiddleware": 550,
+    "scrapy_project.middlewares.DomainThrottleMiddleware": 560,
+    "scrapy_project.middlewares.DeadDomainMiddleware": 570,
+}
+
+DOMAIN_THROTTLE_DELAY = 1.0
+RETRY_BACKOFF_BASE = 1.5
+RETRY_BACKOFF_MAX = 30.0
+RETRY_ENABLED = True
+RETRY_TIMES = 3
+
 # Disable the default Scrapy telnet console to avoid noisy Twisted
 # negotiation errors in environments that probe random ports (e.g.,
 # Render health checks).

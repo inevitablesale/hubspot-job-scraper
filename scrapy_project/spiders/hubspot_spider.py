@@ -31,6 +31,18 @@ ROLE_KEYWORDS = [
     "administrator",
 ]
 
+SKIP_DOMAINS = {
+    "instagram.com",
+    "facebook.com",
+    "fb.com",
+    "messenger.com",
+    "linkedin.com",
+    "twitter.com",
+    "x.com",
+    "yelp.com",
+    "youtube.com",
+}
+
 DATASET_ENV_VAR = "DOMAINS_FILE"
 RENDER_SECRET_DATASET = Path("/etc/secrets/DOMAINS_FILE")
 
@@ -53,7 +65,7 @@ class HubspotSpider(scrapy.Spider):
             website = company.get("website")
             title = company.get("title") or website
             normalized = self._normalize_start_url(website)
-            if normalized:
+            if normalized and not self._should_skip_domain(normalized):
                 yield scrapy.Request(
                     url=normalized,
                     callback=self.parse_home,
@@ -73,6 +85,8 @@ class HubspotSpider(scrapy.Spider):
                 continue
             full_url = self._safe_urljoin(root, href)
             if not full_url:
+                continue
+            if self._should_skip_domain(full_url):
                 continue
             if self._is_internal(full_url, host_root) and self._looks_like_career(full_url, text):
                 if full_url not in seen:
@@ -163,7 +177,7 @@ class HubspotSpider(scrapy.Spider):
         if parsed_candidate.scheme in {"http", "https"} and parsed_candidate.netloc:
             return candidate
 
-        self.logger.error("Skipping invalid website URL: %s", url)
+        self.logger.warning("Skipping invalid website URL: %s", url)
         return None
 
     def _extract_redirect_target(self, url):
@@ -177,6 +191,15 @@ class HubspotSpider(scrapy.Spider):
                 return target
 
         return url
+
+    def _should_skip_domain(self, url: str) -> bool:
+        host = urlparse(url).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        if any(host == sd or host.endswith("." + sd) for sd in SKIP_DOMAINS):
+            self.logger.info("Skipping social/blocked domain: %s", host)
+            return True
+        return False
 
     def _resolve_dataset_path(self):
         env_path = os.getenv(DATASET_ENV_VAR)

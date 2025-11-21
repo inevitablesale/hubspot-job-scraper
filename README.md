@@ -8,6 +8,7 @@ A small Scrapy project that crawls company websites, looks for career pages, and
 * Visits each homepage, follows internal career-looking links, and flags pages that mention both HubSpot and target role keywords.
 * Buffers results and posts them to `https://ntfy.sh/hubspot_job_alerts` when the crawl finishes.
 * Exposes a FastAPI “control room” with live log streaming, status endpoints, and an ECharts-powered activity pulse.
+* Handles DNS failures gracefully, marks dead domains to avoid repeated errors, skips social/link-shortener detours, and throttles per-domain requests with exponential backoff retries for noisy sites.
 
 ## Setup
 
