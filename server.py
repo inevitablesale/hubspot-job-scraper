@@ -129,6 +129,7 @@ async def ws_logs(websocket: WebSocket):
 
 
 @app.get("/")
+@app.head("/")
 async def serve_index():
     index = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index):
