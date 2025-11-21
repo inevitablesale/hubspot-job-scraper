@@ -81,13 +81,9 @@ async def list_domains():
 
 
 @app.get("/domains/changes")
-async def domain_changes():
+async def domain_changes(hours: int = 24):
     registry = app.state.registry
-    records = registry.get_all()
-    return {
-        "total": len(records),
-        "with_hubspot": registry.stats().get("with_hubspot"),
-    }
+    return registry.get_changes(hours=hours)
 
 
 @app.delete("/domains/{domain}")

@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -152,9 +152,11 @@ class DomainRegistry:
     def __init__(self, dataset_env: str = "DOMAINS_FILE", stamp: Path = Path("/data/.domains_initialized")):
         self.dataset_env = dataset_env
         self.dataset_path = Path(os.getenv(dataset_env) or "/etc/secrets/DOMAINS_FILE")
+        self.events_path = Path(os.getenv("DOMAIN_EVENTS_FILE") or f"{self.dataset_path}.events.json")
         self.stamp = stamp
         self._lock = asyncio.Lock()
         self._cache: List[Dict] = []
+        self._events: List[Dict] = []
         self._load_and_normalize()
 
     def _load_raw(self) -> List[Dict]:
@@ -206,6 +208,7 @@ class DomainRegistry:
                     }
                 )
         self._cache = normalized
+        self._events = self._load_events()
         self._write()
         if not self.stamp.exists():
             try:
@@ -217,6 +220,30 @@ class DomainRegistry:
     def _write(self):
         self.dataset_path.parent.mkdir(parents=True, exist_ok=True)
         self.dataset_path.write_text(json.dumps(self._cache, indent=2))
+        self._write_events()
+
+    def _write_events(self):
+        try:
+            self.events_path.parent.mkdir(parents=True, exist_ok=True)
+            self.events_path.write_text(json.dumps(self._events[-500:], indent=2))
+        except Exception:
+            pass
+
+    def _load_events(self) -> List[Dict]:
+        if not self.events_path.exists():
+            return []
+        try:
+            data = json.loads(self.events_path.read_text())
+            if isinstance(data, list):
+                return data
+        except Exception:
+            return []
+        return []
+
+    def _record_event(self, event_type: str, domain: str):
+        event = {"type": event_type, "domain": domain, "ts": datetime.utcnow().isoformat() + "Z"}
+        self._events.append(event)
+        self._write_events()
 
     async def add_candidate(self, candidate: Dict, source: str = "maps"):
         domain = normalize_domain(candidate.get("domain") or candidate.get("raw_website"))
@@ -247,6 +274,7 @@ class DomainRegistry:
                         "failures": 0,
                     }
                 )
+                self._record_event("added", domain)
             self._write()
         return True
 
@@ -270,6 +298,7 @@ class DomainRegistry:
     async def remove(self, domain: str):
         async with self._lock:
             self._cache = [c for c in self._cache if c.get("domain") != domain]
+            self._record_event("removed", domain)
             self._write()
 
     def get_all(self) -> List[Dict]:
@@ -279,6 +308,34 @@ class DomainRegistry:
         total = len(self._cache)
         with_hubspot = len([c for c in self._cache if c.get("hubspot", {}).get("has_hubspot")])
         return {"total": total, "with_hubspot": with_hubspot}
+
+    def get_changes(self, hours: int = 24) -> Dict:
+        cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+        def _recent(events, etype):
+            recent = []
+            for e in events:
+                if e.get("type") != etype:
+                    continue
+                ts = e.get("ts")
+                try:
+                    dt = datetime.fromisoformat(ts.replace("Z", ""))
+                except Exception:
+                    continue
+                if dt >= cutoff:
+                    recent.append(e)
+            return recent
+
+        added = _recent(self._events, "added")
+        removed = _recent(self._events, "removed")
+        return {
+            "added": added,
+            "removed": removed,
+            "added_count": len(added),
+            "removed_count": len(removed),
+            "total": len(self._cache),
+            "with_hubspot": len([c for c in self._cache if c.get("hubspot", {}).get("has_hubspot")]),
+        }
 
 
 def get_registry() -> DomainRegistry:

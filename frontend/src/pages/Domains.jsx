@@ -11,6 +11,11 @@ export default function Domains() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const hubspotRate = useMemo(() => {
+    if (!stats.total) return 0
+    return Math.round((stats.with_hubspot / stats.total) * 100)
+  }, [stats])
+
   const load = async () => {
     setLoading(true)
     try {
@@ -18,7 +23,7 @@ export default function Domains() {
       setDomains(data.domains || [])
       setStats(data.stats || { total: 0, with_hubspot: 0 })
       const diff = await fetchDomainChanges()
-      setChanges(diff)
+      setChanges(diff || {})
     } finally {
       setLoading(false)
     }
@@ -60,9 +65,9 @@ export default function Domains() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Total domains" value={stats.total} />
-        <StatCard label="With HubSpot" value={stats.with_hubspot} />
-        <StatCard label="Recent total" value={changes.total || 0} />
-        <StatCard label="HubSpot detected" value={changes.with_hubspot || 0} />
+        <StatCard label="With HubSpot" value={`${stats.with_hubspot || 0} (${hubspotRate}%)`} />
+        <StatCard label="Added (24h)" value={changes.added_count || 0} />
+        <StatCard label="Removed (24h)" value={changes.removed_count || 0} />
       </div>
 
       <div className="flex items-center gap-3">

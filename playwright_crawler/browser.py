@@ -1,5 +1,6 @@
 import asyncio
 import os
+import random
 from contextlib import asynccontextmanager
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
@@ -10,10 +11,16 @@ DEFAULT_USER_AGENT = (
 
 
 async def _new_context(browser: Browser) -> BrowserContext:
+    ua = os.getenv("USER_AGENT") or DEFAULT_USER_AGENT
+    # light randomization to avoid looking fully static
+    viewport = {
+        "width": random.choice([1280, 1366, 1440, 1600]),
+        "height": random.choice([720, 768, 900]),
+    }
     return await browser.new_context(
-        user_agent=os.getenv("USER_AGENT", DEFAULT_USER_AGENT),
+        user_agent=ua,
         ignore_https_errors=True,
-        viewport={"width": 1366, "height": 768},
+        viewport=viewport,
     )
 
 

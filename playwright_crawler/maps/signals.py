@@ -1,20 +1,20 @@
 from typing import Dict, List
 
 
-AGENCY_KEYWORDS = {
-    "marketing",
-    "digital",
-    "crm",
-    "hubspot",
-    "automation",
-    "revops",
-    "revenue operations",
-    "inbound",
-    "web development",
-    "systems integration",
-    "branding",
-    "advertising",
-    "growth",
+KEYWORD_SIGNALS = {
+    "marketing": (15, "Marketing keyword"),
+    "digital": (10, "Digital keyword"),
+    "crm": (25, "CRM keyword"),
+    "hubspot": (35, "HubSpot keyword"),
+    "automation": (20, "Automation keyword"),
+    "revops": (25, "RevOps keyword"),
+    "revenue operations": (20, "Revenue ops keyword"),
+    "inbound": (15, "Inbound keyword"),
+    "web development": (15, "Web dev keyword"),
+    "systems integration": (15, "Integration keyword"),
+    "branding": (10, "Branding keyword"),
+    "advertising": (10, "Advertising keyword"),
+    "growth": (10, "Growth keyword"),
 }
 
 
@@ -30,18 +30,18 @@ def score_detail(detail: Dict) -> Dict:
     tags = [t.lower() for t in detail.get("tags", [])]
 
     for cat in categories:
-        if "marketing" in cat or "consultant" in cat or "agency" in cat:
+        if any(token in cat for token in ["marketing", "consultant", "agency", "advertising", "digital"]):
             is_marketing = True
-            signals.append("Marketing agency category")
+            signals.append("Marketing/consulting category")
             score += 40
         if "software" in cat or "development" in cat:
             signals.append("Software/dev category")
             score += 15
 
-    for kw in AGENCY_KEYWORDS:
+    for kw, (points, label) in KEYWORD_SIGNALS.items():
         if kw in description or any(kw in t for t in tags):
-            score += 10
-            signals.append(f"Keyword: {kw}")
+            score += points
+            signals.append(label)
             if kw in {"hubspot", "crm", "revops", "automation"}:
                 looks_hubspot = True
 
@@ -56,6 +56,8 @@ def score_detail(detail: Dict) -> Dict:
     if "hubspot" in description:
         looks_hubspot = True
         score += 20
+
+    score = min(score, 200)
 
     return {
         "is_marketing_or_revops": is_marketing or looks_hubspot,

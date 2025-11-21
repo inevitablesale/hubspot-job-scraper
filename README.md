@@ -77,7 +77,7 @@ Only pages crossing the threshold emit alerts. Remote-only and agency filters ar
 
 ### Domains view + Maps Radar
 - New **Domains** tab lists all known agencies/domains, their scores, HubSpot detection confidence, last seen, and signals. You can remove domains inline.
-- Backend endpoints: `GET /domains`, `GET /domains/changes`, `DELETE /domains/{domain}`.
+- Backend endpoints: `GET /domains`, `GET /domains/changes` (added/removed in the last 24h), `DELETE /domains/{domain}`.
 - Maps Radar endpoint: `POST /run/maps` (body: `{ "queries": [...], "limit": 50 }`). It runs Google Maps searches for HubSpot-ish agencies, scores them, detects HubSpot on their sites, and inserts high-quality domains into `DOMAINS_FILE`.
 - The job crawler continues to read from `DOMAINS_FILE`, so newly discovered domains are automatically swept for HubSpot roles.
 
