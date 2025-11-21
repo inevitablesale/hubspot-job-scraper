@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -30,7 +31,8 @@ ROLE_KEYWORDS = [
     "administrator",
 ]
 
-DATASET_FILE = (
+DATASET_ENV_VAR = "DOMAINS_FILE"
+DEFAULT_DATASET_FILE = (
     Path(__file__).resolve().parent.parent / "dataset_crawler-google-places_2025-11-20_21-44-01-758.json"
 )
 
@@ -45,12 +47,9 @@ class HubspotSpider(scrapy.Spider):
     }
 
     def start_requests(self):
-        if not DATASET_FILE.exists():
-            self.logger.error("Dataset file not found: %s", DATASET_FILE)
+        companies = self._load_companies()
+        if not companies:
             return
-
-        with DATASET_FILE.open() as f:
-            companies = json.load(f)
 
         for company in companies:
             website = company.get("website")
@@ -104,3 +103,35 @@ class HubspotSpider(scrapy.Spider):
     def _looks_like_career(self, url, text):
         target = url.lower() + " " + text.lower()
         return any(h in target for h in CAREER_HINTS)
+
+    def _load_companies(self):
+        dataset_path = Path(os.getenv(DATASET_ENV_VAR, DEFAULT_DATASET_FILE))
+
+        if not dataset_path.exists():
+            self.logger.error("Dataset file not found: %s", dataset_path)
+            return []
+
+        try:
+            with dataset_path.open() as f:
+                data = json.load(f)
+        except json.JSONDecodeError as exc:
+            self.logger.error("Invalid JSON in %s: %s", dataset_path, exc)
+            return []
+
+        companies = []
+        if isinstance(data, list):
+            for entry in data:
+                if isinstance(entry, str):
+                    companies.append({"title": entry, "website": entry})
+                elif isinstance(entry, dict):
+                    website = entry.get("website") or entry.get("url")
+                    title = entry.get("title") or website
+                    if website:
+                        companies.append({"title": title, "website": website})
+        else:
+            self.logger.error("Dataset %s must be a JSON array", dataset_path)
+
+        if not companies:
+            self.logger.error("No valid companies found in %s", dataset_path)
+
+        return companies

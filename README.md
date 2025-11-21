@@ -12,7 +12,19 @@ pip install -r requirements.txt
 
 ## Usage
 
-Ensure `dataset_crawler-google-places_2025-11-20_21-44-01-758.json` exists in the project root and contains objects with `title` and `website` fields. Then run:
+Provide a dataset as a JSON array using one of two formats:
+
+* List of objects with `website` (and optional `title`)
+* List of strings (each string is treated as both `title` and `website`)
+
+By default the spider reads `dataset_crawler-google-places_2025-11-20_21-44-01-758.json` in the project root. To point to another file (e.g., a Render secret mounted at `/etc/secrets/domains`), set `DOMAINS_FILE`:
+
+```bash
+export DOMAINS_FILE=/etc/secrets/domains
+python main.py
+```
+
+Then run:
 
 ```bash
 python main.py
