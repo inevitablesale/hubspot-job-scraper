@@ -174,6 +174,9 @@ class HubspotSpider(scrapy.Spider):
         host_root = self._get_host(root)
 
         seen = set()
+        outbound_links = []
+        outbound_seen = set()
+        matched_links = []
         for sel in response.css("a"):
             href = sel.attrib.get("href")
             text = sel.css("::text").get() or ""
@@ -184,6 +187,10 @@ class HubspotSpider(scrapy.Spider):
             if not full_url:
                 continue
 
+            if full_url not in outbound_seen:
+                outbound_seen.add(full_url)
+                outbound_links.append(full_url)
+
             if self._should_skip_domain(full_url):
                 continue
 
@@ -192,6 +199,7 @@ class HubspotSpider(scrapy.Spider):
                 norm = self._normalize_ats_url(full_url)
                 if norm not in self.ats_seen:
                     self.ats_seen.add(norm)
+                    matched_links.append(full_url)
                     yield scrapy.Request(
                         url=full_url,
                         callback=self.parse_ats_page,
@@ -207,25 +215,57 @@ class HubspotSpider(scrapy.Spider):
             if self._is_internal(full_url, host_root) and self._looks_like_career(full_url, text):
                 if full_url not in seen:
                     seen.add(full_url)
+                    matched_links.append(full_url)
                     yield scrapy.Request(
                         url=full_url,
                         callback=self.parse_career_page,
                         meta={"company": company, "job_page": full_url},
                     )
 
+        summary = {
+            "matched_links": len(matched_links),
+            "items": 0,
+            "top_links": outbound_links[:20],
+        }
+        self.logger.info(
+            f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
+            f"items={summary['items']}, top_links={summary['top_links']}"
+        )
+
     def parse_career_page(self, response):
+        outbound_links = self._collect_outbound_links(response)
         text = response.text.lower()
         role_match = self._evaluate_roles(text)
         if not role_match:
+            summary = {
+                "matched_links": 0,
+                "items": [],
+                "top_links": outbound_links[:20],
+            }
+            self.logger.info(
+                f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
+                f"items={summary['items']}, top_links={summary['top_links']}"
+            )
             return
 
-        yield {
+        item = {
             "company": response.meta["company"],
             "job_page": response.meta["job_page"],
             "role": role_match["role"],
             "score": role_match["score"],
             "signals": role_match["signals"],
         }
+        summary = {
+            "matched_links": 1,
+            "items": [item],
+            "top_links": outbound_links[:20],
+        }
+        self.logger.info(
+            f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
+            f"items={summary['items']}, top_links={summary['top_links']}"
+        )
+
+        yield item
 
     def parse_ats_page(self, response):
         """
@@ -236,16 +276,22 @@ class HubspotSpider(scrapy.Spider):
         company = response.meta["company"]
         ats_root = response.meta.get("ats_root") or self._get_host(response.url)
 
+        outbound_links = self._collect_outbound_links(response)
+        matched_links = []
+        items = []
         text = response.text.lower()
         role_match = self._evaluate_roles(text)
         if role_match:
-            yield {
+            matched_links.append(response.url)
+            item = {
                 "company": company,
                 "job_page": response.url,
                 "role": role_match["role"],
                 "score": role_match["score"],
                 "signals": role_match["signals"],
             }
+            items.append(item)
+            yield item
 
         # Discover more job pages within the ATS host
         for sel in response.css("a"):
@@ -268,11 +314,43 @@ class HubspotSpider(scrapy.Spider):
                 continue
 
             self.ats_seen.add(norm)
+            matched_links.append(full_url)
             yield scrapy.Request(
                 url=full_url,
                 callback=self.parse_ats_page,
                 meta={"company": company, "ats_root": ats_root},
             )
+
+        summary = {
+            "matched_links": len(matched_links),
+            "items": items,
+            "top_links": outbound_links[:20],
+        }
+        self.logger.info(
+            f"[FOUND] On {response.url} → Found: matched_links={summary['matched_links']}, "
+            f"items={summary['items']}, top_links={summary['top_links']}"
+        )
+
+    def _collect_outbound_links(self, response, base_url=None):
+        base = base_url or response.url
+        links = []
+        seen = set()
+        for sel in response.css("a"):
+            href = sel.attrib.get("href")
+            if not href:
+                continue
+
+            full_url = self._safe_urljoin(base, href)
+            if not full_url:
+                continue
+
+            if full_url in seen:
+                continue
+
+            seen.add(full_url)
+            links.append(full_url)
+
+        return links
 
     def _get_host(self, url):
         netloc = urlparse(url).netloc

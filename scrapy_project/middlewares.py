@@ -16,6 +16,12 @@ class LogRequestsMiddleware:
         return None
 
 
+class LogResponseMiddleware:
+    def process_response(self, request, response, spider):
+        spider.logger.info(f"RESPONSE {response.status} ← {response.url}")
+        return response
+
+
 class DomainThrottleMiddleware:
     """Apply a minimal delay between requests per domain to avoid burstiness."""
 

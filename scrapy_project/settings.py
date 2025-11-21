@@ -13,7 +13,11 @@ USER_AGENT = (
 
 ROBOTSTXT_OBEY = False
 
-CONCURRENT_REQUESTS = 10
+DOWNLOAD_DELAY = 1.0
+RANDOMIZE_DOWNLOAD_DELAY = True
+CONCURRENT_REQUESTS = 2
+CONCURRENT_REQUESTS_PER_DOMAIN = 1
+CONCURRENT_REQUESTS_PER_IP = 1
 
 ITEM_PIPELINES = {
     "scrapy_project.pipelines.NtfyNotifyPipeline": 1,
@@ -24,6 +28,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "ERROR")
 
 DOWNLOADER_MIDDLEWARES = {
     "scrapy_project.middlewares.LogRequestsMiddleware": 5,
+    "scrapy_project.middlewares.LogResponseMiddleware": 6,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,
     "scrapy_project.middlewares.ExponentialBackoffRetryMiddleware": 550,
     "scrapy_project.middlewares.DomainThrottleMiddleware": 560,
