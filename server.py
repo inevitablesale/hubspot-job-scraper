@@ -50,9 +50,10 @@ async def trigger_run():
     app.state.last_event_at = None
 
     env = os.environ.copy()
-    env.setdefault("SCRAPY_SETTINGS_MODULE", "scrapy_project.settings")
+    domains_file = env.get("DOMAINS_FILE", "domains.txt")
+    output_file = env.get("OUTPUT_FILE", "results.jsonl")
     proc = subprocess.Popen(
-        ["python", "main.py"],
+        ["python", "main.py", "--domains-file", domains_file, "--output", output_file],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

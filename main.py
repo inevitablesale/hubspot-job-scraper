@@ -1,17 +1,27 @@
-import os
+import argparse
 
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
-
-from scrapy_project.spiders.hubspot_spider import HubspotSpider
+from playwright_crawler import main as crawl_main
 
 
-def run_spider():
-    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "scrapy_project.settings")
-    process = CrawlerProcess(get_project_settings())
-    process.crawl(HubspotSpider)
-    process.start()
+def parse_args():
+    parser = argparse.ArgumentParser(description="Async Playwright career crawler")
+    parser.add_argument(
+        "--domains-file",
+        default="domains.txt",
+        help="Path to newline-delimited domains to crawl",
+    )
+    parser.add_argument(
+        "--output",
+        default="results.jsonl",
+        help="Path to JSONL output file",
+    )
+    return parser.parse_args()
+
+
+def run():
+    args = parse_args()
+    crawl_main(args.domains_file, args.output)
 
 
 if __name__ == "__main__":
-    run_spider()
+    run()
