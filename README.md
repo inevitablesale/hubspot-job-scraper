@@ -17,13 +17,8 @@ Provide a dataset as a JSON array using one of two formats:
 * List of objects with `website` (and optional `title`)
 * List of strings (each string is treated as both `title` and `website`)
 
-By default the spider tries, in order:
-
-1. The `DOMAINS_FILE` environment variable (if provided)
-2. Render's secret mount at `/etc/secrets/DOMAINS_FILE`
-3. `dataset_crawler-google-places_2025-11-20_21-44-01-758.json` in the project root
-
-To point to another file (e.g., a Render secret mounted at `/etc/secrets/domains`), set `DOMAINS_FILE`:
+The spider loads domains from `DOMAINS_FILE` if set; otherwise it reads the Render secret mount at `/etc/secrets/DOMAINS_FILE`.
+If you mount a different path, set `DOMAINS_FILE` accordingly:
 
 ```bash
 export DOMAINS_FILE=/etc/secrets/domains
