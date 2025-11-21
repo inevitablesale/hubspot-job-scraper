@@ -33,6 +33,10 @@ python main.py
 
 Found roles are sent to `https://ntfy.sh/hubspot_job_alerts` with the configured email header.
 
+### Cleaning Google redirect URLs
+
+If your dataset contains Google redirect links such as `/url?q=https://example.com&...` or `https://www.google.com/url?q=...`, the spider now extracts the `q` parameter so the crawl starts on the real site instead of skipping the entry.
+
 ## Usage (browser trigger + live log)
 
 Launch the lightweight FastAPI server to start crawls from the browser and stream stdout in real time:
@@ -42,3 +46,5 @@ uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
 Visit `http://localhost:8000` and click **Start Crawl** to trigger the spider. The page uses Server-Sent Events to show the live log and expose a `/status` endpoint so you can check whether a crawl is running.
+
+> Render note: the crawler does not bind a port; deploy it as a Background Worker (or use the FastAPI server/uvicorn command above if you need a Web Service).

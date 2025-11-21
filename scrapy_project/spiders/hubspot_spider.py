@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse
 
 import scrapy
 
@@ -152,11 +152,12 @@ class HubspotSpider(scrapy.Spider):
         if not url:
             return None
 
-        parsed = urlparse(url)
+        redirected = self._extract_redirect_target(url)
+        parsed = urlparse(redirected)
         if parsed.scheme and parsed.netloc:
-            return url
+            return redirected
 
-        candidate = f"https://{url}" if not parsed.scheme else url
+        candidate = f"https://{redirected}" if not parsed.scheme else redirected
         parsed_candidate = urlparse(candidate)
 
         if parsed_candidate.scheme in {"http", "https"} and parsed_candidate.netloc:
@@ -164,6 +165,18 @@ class HubspotSpider(scrapy.Spider):
 
         self.logger.error("Skipping invalid website URL: %s", url)
         return None
+
+    def _extract_redirect_target(self, url):
+        """Handle Google /url redirects by pulling the ?q= target when present."""
+
+        parsed = urlparse(url)
+
+        if parsed.path == "/url":
+            target = parse_qs(parsed.query).get("q", [None])[0]
+            if target:
+                return target
+
+        return url
 
     def _resolve_dataset_path(self):
         env_path = os.getenv(DATASET_ENV_VAR)
