@@ -14,6 +14,10 @@ BLOCKED_DOMAINS = {
     "wix.com",
     "wixstatic.com",
     "about:blank",
+    "hubspot.com",
+    "medium.com",
+    "shopify.com",
+    "wordpress.com",
 }
 
 REMOTE_BAD_REGIONS = ["emea", "latam", "apac", "canada", "australia", "nz", "new zealand"]

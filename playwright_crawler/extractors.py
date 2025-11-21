@@ -1,117 +1,307 @@
-import json
 import re
-from typing import List, Dict, Any
-from urllib.parse import urljoin
-from selectolax.parser import HTMLParser
+from typing import Dict, List, Optional, Tuple
+from urllib.parse import urljoin, urlparse
 
-TITLE_HINTS = ["manager", "architect", "specialist", "director", "developer", "consultant", "engineer", "lead"]
-SECTION_HINTS = ["open positions", "jobs", "careers", "opportunities", "join our", "join us"]
+from playwright.async_api import Frame, Page
+
+HUBSPOT_TITLE_KEYWORDS = [
+    "hubspot",
+    "crm",
+    "revops",
+    "marketing ops",
+    "revenue operations",
+    "automation",
+    "hubspot admin",
+    "hubspot consultant",
+    "hubspot specialist",
+    "hubspot developer",
+    "operations hub",
+    "cms hub",
+    "sales hub",
+    "service hub",
+    "workflow",
+    "marketing automation",
+]
+
+ROLE_SELECTORS = [
+    "a[href*='job']",
+    "a[href*='jobs']",
+    "a[href*='careers']",
+    "a[href*='opening']",
+    "a[href*='opportunity']",
+    ".job-title",
+    "div[class*='job'] a",
+    "[data-qa='job-card']",
+    "[role='listitem'] a",
+]
+
+PAGINATION_SELECTORS = [
+    "button:has-text('Next')",
+    "a[rel='next']",
+    "button:has-text('Load More')",
+    "button:has-text('More Jobs')",
+]
+
+SEARCH_KEYWORDS = ["HubSpot", "CRM", "RevOps"]
+
+DESCRIPTION_SELECTORS = [
+    ".job-description",
+    "#content",
+    "section:has-text('Responsibilities')",
+    "section:has-text('Requirements')",
+    ".gh-content",
+    ".workable-content",
+]
+
+APPLY_SELECTORS = [
+    "a[href*='apply']",
+    "button:has-text('Apply')",
+    "input[type='submit']",
+    ".lever-apply-button",
+    ".greenhouse-apply-button",
+]
+
+MULTI_ROLE_GUARD = [
+    ".job-card",
+    ".job-opening",
+    ".opening-title",
+    "a[href*='/jobs/']",
+]
+
+LOCATION_SELECTORS = [
+    "[data-qa='job-location']",
+    ".job-location",
+    ".location",
+]
+
+DEPARTMENT_SELECTORS = [
+    "[data-qa='job-department']",
+    ".department",
+]
+
+ATS_ALLOWLIST = {
+    "greenhouse.io",
+    "lever.co",
+    "workable.com",
+    "jazzhr.com",
+    "bamboohr.com",
+    "ashbyhq.com",
+    "pinpointhq.com",
+    "teamtailor.com",
+    "recruitee.com",
+    "myworkdayjobs.com",
+}
 
 
-def _clean_text(text: str) -> str:
-    return re.sub(r"\s+", " ", text or "").strip()
+def _clean_text(text: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()
 
 
-def _extract_json_ld(tree: HTMLParser, base_url: str) -> List[Dict[str, Any]]:
-    jobs: List[Dict[str, Any]] = []
-    for node in tree.css("script[type='application/ld+json']"):
+def _host(url: str) -> str:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if host.startswith("www."):
+        host = host[4:]
+    return host
+
+
+def _is_allowed_host(target: str, root_host: str) -> bool:
+    host = _host(target)
+    return not host or host == root_host or host.endswith("." + root_host) or host in ATS_ALLOWLIST
+
+
+def _matches_hubspot_title(title: str) -> bool:
+    lowered = title.lower()
+    return any(k in lowered for k in HUBSPOT_TITLE_KEYWORDS)
+
+
+async def _collect_listings_from_context(page: Page, base_url: str, root_host: str) -> List[Dict[str, str]]:
+    listings: List[Dict[str, str]] = []
+    for selector in ROLE_SELECTORS:
         try:
-            data = json.loads(node.text())
+            elements = await page.query_selector_all(selector)
         except Exception:
             continue
-        if isinstance(data, dict):
-            data = [data]
-        if not isinstance(data, list):
-            continue
-        for entry in data:
-            if not isinstance(entry, dict):
+        for el in elements:
+            try:
+                text = _clean_text(await el.inner_text())
+            except Exception:
+                text = ""
+            href = None
+            try:
+                href = await el.get_attribute("href")
+            except Exception:
+                href = None
+            if not text:
                 continue
-            if entry.get("@type") in {"JobPosting", ["JobPosting"]}:
-                title = entry.get("title") or ""
-                url = entry.get("url") or base_url
-                location = ""
-                loc = entry.get("jobLocation")
-                if isinstance(loc, dict):
-                    address = loc.get("address") or {}
-                    location = address.get("addressLocality") or address.get("addressRegion") or ""
-                summary = entry.get("description") or ""
-                jobs.append(
-                    {
-                        "title": _clean_text(title),
-                        "url": urljoin(base_url, url),
-                        "location": _clean_text(location),
-                        "summary": _clean_text(summary),
-                    }
-                )
-    return jobs
+            url = urljoin(base_url, href) if href else base_url
+            if not _matches_hubspot_title(text):
+                continue
+            if not _is_allowed_host(url, root_host):
+                continue
+            listings.append({"title": text, "url": url})
+    return listings
 
 
-def _extract_anchors(tree: HTMLParser, base_url: str) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-    for a in tree.css("a"):
-        href = a.attrs.get("href")
-        text = _clean_text(a.text())
-        if not href or not text:
+async def _run_search_if_available(page: Page):
+    try:
+        search_input = await page.query_selector("input[type='search'], input[name*='search']")
+    except Exception:
+        return
+    if not search_input:
+        return
+    try:
+        await search_input.click()
+        await search_input.fill(SEARCH_KEYWORDS[0])
+        await search_input.press("Enter")
+        await page.wait_for_timeout(1200)
+    except Exception:
+        return
+
+
+async def _click_next(page: Page) -> bool:
+    for selector in PAGINATION_SELECTORS:
+        try:
+            locator = page.locator(selector)
+            if await locator.count() > 0:
+                await locator.first.click(timeout=1500)
+                await page.wait_for_timeout(1200)
+                return True
+        except Exception:
             continue
-        lower = (href + " " + text).lower()
-        if "job" in lower or "career" in lower or any(h in lower for h in TITLE_HINTS):
-            results.append({"title": text, "url": urljoin(base_url, href), "summary": ""})
-    return results
+    return False
 
 
-def _extract_headings(tree: HTMLParser) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-    for tag in ["h2", "h3", "h4"]:
-        for h in tree.css(tag):
-            text = _clean_text(h.text())
-            if any(k in text.lower() for k in TITLE_HINTS) and len(text.split()) <= 12:
-                results.append({"title": text, "url": None, "summary": ""})
-    return results
+async def _infinite_scroll(page: Page) -> bool:
+    try:
+        before = await page.evaluate("document.body.scrollHeight")
+        await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+        await page.wait_for_timeout(1200)
+        after = await page.evaluate("document.body.scrollHeight")
+        return after > before
+    except Exception:
+        return False
 
 
-def _extract_buttons(tree: HTMLParser, base_url: str) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-    for btn in tree.css("button, [role='button']"):
-        text = _clean_text(btn.text())
-        if any(k in text.lower() for k in TITLE_HINTS):
-            href = btn.attrs.get("onclick") or ""
-            match = re.search(r"['\"](http[^'\"]+)['\"]", href)
-            url = match.group(1) if match else None
-            results.append({"title": text, "url": url, "summary": ""})
-    return results
+async def extract_hubspot_listings(page: Page, base_url: str, root_host: str) -> List[Dict[str, str]]:
+    """Extract HubSpot-filtered role listings from a careers page (and allowed frames)."""
 
-
-def _extract_sections(tree: HTMLParser, base_url: str) -> List[Dict[str, Any]]:
-    results: List[Dict[str, Any]] = []
-    for section in tree.css("section, div"):
-        text = _clean_text(section.text())
-        if not text:
-            continue
-        lower = text.lower()
-        if any(h in lower for h in SECTION_HINTS):
-            # look for headings inside
-            for node in section.css("h2, h3, h4"):
-                title = _clean_text(node.text())
-                if title and any(k in title.lower() for k in TITLE_HINTS):
-                    results.append({"title": title, "url": None, "summary": text[:400]})
-    return results
-
-
-def extract_jobs_from_html(html: str, base_url: str) -> List[Dict[str, Any]]:
-    tree = HTMLParser(html)
-    jobs: List[Dict[str, Any]] = []
-    jobs.extend(_extract_json_ld(tree, base_url))
-    jobs.extend(_extract_anchors(tree, base_url))
-    jobs.extend(_extract_buttons(tree, base_url))
-    jobs.extend(_extract_sections(tree, base_url))
-    jobs.extend(_extract_headings(tree))
-
-    deduped = []
+    await _run_search_if_available(page)
+    listings: List[Dict[str, str]] = []
     seen = set()
-    for job in jobs:
-        key = (job.get("title"), job.get("url"))
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(job)
-    return deduped
+    last_count = -1
+    iterations = 0
+
+    while iterations < 12:  # guard against infinite loops
+        iterations += 1
+        current: List[Dict[str, str]] = []
+        current.extend(await _collect_listings_from_context(page, base_url, root_host))
+
+        # Frames (ATS embeds)
+        for frame in page.frames:
+            if frame == page.main_frame:
+                continue
+            frame_host = _host(frame.url)
+            if frame_host and frame_host not in ATS_ALLOWLIST and frame_host != root_host and not frame_host.endswith("." + root_host):
+                continue
+            try:
+                current.extend(await _collect_listings_from_context(frame, frame.url or base_url, root_host))
+            except Exception:
+                continue
+
+        for entry in current:
+            key = (entry.get("title"), entry.get("url"))
+            if key in seen:
+                continue
+            seen.add(key)
+            listings.append(entry)
+
+        if len(listings) == last_count:
+            # Try pagination or scroll; if neither adds items, break.
+            if await _click_next(page):
+                last_count = len(listings)
+                continue
+            if await _infinite_scroll(page):
+                last_count = len(listings)
+                continue
+            break
+        last_count = len(listings)
+
+    return listings
+
+
+async def validate_role_page(page: Page) -> Optional[Dict[str, str]]:
+    """Ensure a role page contains a single job and required fields."""
+
+    try:
+        title_loc = page.locator("h1, .job-title, #job-title, .posting-headline")
+        titles = []
+        count = await title_loc.count()
+        for idx in range(min(count, 5)):
+            text = _clean_text(await title_loc.nth(idx).inner_text())
+            if text:
+                titles.append(text)
+        uniq_titles = list(dict.fromkeys(titles))
+        if len(uniq_titles) != 1:
+            return None
+        title = uniq_titles[0]
+    except Exception:
+        return None
+
+    try:
+        desc_node = None
+        for selector in DESCRIPTION_SELECTORS:
+            loc = page.locator(selector)
+            if await loc.count() > 0:
+                desc_node = loc.first
+                break
+        description_html = await desc_node.inner_html() if desc_node else ""
+    except Exception:
+        description_html = ""
+
+    try:
+        apply_ok = False
+        for selector in APPLY_SELECTORS:
+            loc = page.locator(selector)
+            if await loc.count() > 0:
+                apply_ok = True
+                break
+        if not apply_ok:
+            return None
+    except Exception:
+        return None
+
+    try:
+        multi_loc = page.locator(",".join(MULTI_ROLE_GUARD))
+        if await multi_loc.count() > 1:
+            return None
+    except Exception:
+        pass
+
+    location = ""
+    for selector in LOCATION_SELECTORS:
+        loc = page.locator(selector)
+        if await loc.count() > 0:
+            location = _clean_text(await loc.first.inner_text())
+            break
+
+    department = ""
+    for selector in DEPARTMENT_SELECTORS:
+        loc = page.locator(selector)
+        if await loc.count() > 0:
+            department = _clean_text(await loc.first.inner_text())
+            break
+
+    body_text = ""
+    try:
+        body_text = await page.inner_text("body")
+    except Exception:
+        pass
+
+    return {
+        "title": title,
+        "location": location,
+        "department": department,
+        "description_html": description_html,
+        "body_text": body_text,
+    }
