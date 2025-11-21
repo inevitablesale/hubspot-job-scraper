@@ -45,6 +45,10 @@ python main.py
   mkdir -p static
   cp -r frontend/dist/* static/
   ```
+- Runtime fallback: if Render ever evicts the cached browser, the crawler will
+  auto-run `python -m playwright install chromium` on startup and retry the
+  launch, so runs keep working even after cache resets (requires outbound
+  network during startup).
 - Trigger a run: `POST https://<your-service>/run`
 - Check status: `GET https://<your-service>/status`
 - Health: `GET https://<your-service>/health`
