@@ -18,3 +18,8 @@ ITEM_PIPELINES = {
 }
 
 LOG_LEVEL = "ERROR"
+
+# Disable the default Scrapy telnet console to avoid noisy Twisted
+# negotiation errors in environments that probe random ports (e.g.,
+# Render health checks).
+TELNETCONSOLE_ENABLED = False
