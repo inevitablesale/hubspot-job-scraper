@@ -1,0 +1,5 @@
+Scrapy>=2.11.0
+aiohttp>=3.9.0
+
+fastapi
+uvicorn
