@@ -52,11 +52,12 @@ class HubspotSpider(scrapy.Spider):
         for company in companies:
             website = company.get("website")
             title = company.get("title") or website
-            if website:
+            normalized = self._normalize_start_url(website)
+            if normalized:
                 yield scrapy.Request(
-                    url=website,
+                    url=normalized,
                     callback=self.parse_home,
-                    meta={"company": title, "root": website},
+                    meta={"company": title, "root": normalized},
                 )
 
     def parse_home(self, response):
@@ -70,7 +71,9 @@ class HubspotSpider(scrapy.Spider):
             text = sel.css("::text").get() or ""
             if not href:
                 continue
-            full_url = urljoin(root, href)
+            full_url = self._safe_urljoin(root, href)
+            if not full_url:
+                continue
             if self._is_internal(full_url, host_root) and self._looks_like_career(full_url, text):
                 if full_url not in seen:
                     seen.add(full_url)
@@ -91,6 +94,18 @@ class HubspotSpider(scrapy.Spider):
     def _get_host(self, url):
         netloc = urlparse(url).netloc
         return netloc[4:] if netloc.startswith("www.") else netloc
+
+    def _safe_urljoin(self, base, href):
+        try:
+            joined = urljoin(base, href)
+        except ValueError:
+            return None
+
+        scheme = urlparse(joined).scheme.lower()
+        if scheme not in {"http", "https"}:
+            return None
+
+        return joined
 
     def _is_internal(self, url, root_host):
         link_host = urlparse(url).netloc.lower()
@@ -132,6 +147,23 @@ class HubspotSpider(scrapy.Spider):
             self.logger.error("No valid companies found in %s", dataset_path)
 
         return companies
+
+    def _normalize_start_url(self, url):
+        if not url:
+            return None
+
+        parsed = urlparse(url)
+        if parsed.scheme and parsed.netloc:
+            return url
+
+        candidate = f"https://{url}" if not parsed.scheme else url
+        parsed_candidate = urlparse(candidate)
+
+        if parsed_candidate.scheme in {"http", "https"} and parsed_candidate.netloc:
+            return candidate
+
+        self.logger.error("Skipping invalid website URL: %s", url)
+        return None
 
     def _resolve_dataset_path(self):
         env_path = os.getenv(DATASET_ENV_VAR)
