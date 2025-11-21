@@ -75,6 +75,17 @@ Only pages crossing the threshold emit alerts. Remote-only and agency filters ar
 - Panels: Dashboard (status, run controls, coverage radial, run history chart), Live Logs (WebSocket console with filtering), Results Explorer (coverage table + sortable job table with signals and scores).
 - APIs used: `GET /status`, `POST /run`, `POST /stop`, `GET /results`, `WS /ws/logs`.
 
+### Domains view + Maps Radar
+- New **Domains** tab lists all known agencies/domains, their scores, HubSpot detection confidence, last seen, and signals. You can remove domains inline.
+- Backend endpoints: `GET /domains`, `GET /domains/changes`, `DELETE /domains/{domain}`.
+- Maps Radar endpoint: `POST /run/maps` (body: `{ "queries": [...], "limit": 50 }`). It runs Google Maps searches for HubSpot-ish agencies, scores them, detects HubSpot on their sites, and inserts high-quality domains into `DOMAINS_FILE`.
+- The job crawler continues to read from `DOMAINS_FILE`, so newly discovered domains are automatically swept for HubSpot roles.
+
+### Suggested scheduling
+- Run Maps Radar daily (Render cron): `python -m playwright_crawler.runner run_maps_radar` via a cron entry or API call.
+- Run jobs crawler hourly (existing `/run`).
+- Optional cleanup (failures >=3): call `run_domain_cleanup()` every 6 hours if you wire a cron/maintenance task.
+
 Run locally:
 ```bash
 cd frontend

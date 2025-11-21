@@ -7,8 +7,8 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from playwright_crawler.runner import run_all
-from playwright_crawler.state import get_state
+from playwright_crawler.runner import run_all, run_maps_radar, run_domain_cleanup
+from playwright_crawler.state import get_registry, get_state
 
 app = FastAPI(title="HubSpot Job Hunter (Playwright)")
 
@@ -22,6 +22,7 @@ if os.path.exists(os.path.join(STATIC_DIR, "assets")):
 async def startup():
     app.state.running_task: Optional[asyncio.Task] = None
     app.state.state = get_state()
+    app.state.registry = get_registry()
 
 
 @app.post("/run")
@@ -41,6 +42,22 @@ async def trigger_run():
     return {"status": "started"}
 
 
+@app.post("/run/maps")
+async def trigger_maps_run(body: dict = None):
+    body = body or {}
+    queries = body.get("queries")
+    limit = body.get("limit", 50)
+    if app.state.running_task and not app.state.running_task.done():
+        raise HTTPException(status_code=409, detail="Crawler already running")
+
+    async def _runner():
+        await run_maps_radar(queries=queries, limit=limit)
+
+    app.state.state.add_log("INFO", "Maps radar triggered via API")
+    app.state.running_task = asyncio.create_task(_runner())
+    return {"status": "started", "mode": "maps"}
+
+
 @app.post("/stop")
 async def stop_run():
     if not app.state.running_task or app.state.running_task.done():
@@ -55,6 +72,29 @@ async def status():
     snapshot = state.snapshot()
     snapshot["coverage"] = state.coverage()
     return snapshot
+
+
+@app.get("/domains")
+async def list_domains():
+    registry = app.state.registry
+    return {"domains": registry.get_all(), "stats": registry.stats()}
+
+
+@app.get("/domains/changes")
+async def domain_changes():
+    registry = app.state.registry
+    records = registry.get_all()
+    return {
+        "total": len(records),
+        "with_hubspot": registry.stats().get("with_hubspot"),
+    }
+
+
+@app.delete("/domains/{domain}")
+async def delete_domain(domain: str):
+    registry = app.state.registry
+    await registry.remove(domain)
+    return {"ok": True, "domains": registry.get_all()}
 
 
 @app.get("/results")

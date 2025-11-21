@@ -2,12 +2,14 @@ import { useState } from 'react'
 import Dashboard from './pages/Dashboard'
 import Logs from './pages/Logs'
 import Results from './pages/Results'
+import Domains from './pages/Domains'
 import useStatus from './hooks/useStatus'
 
 const tabs = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'logs', label: 'Live Logs' },
   { id: 'results', label: 'Results' },
+  { id: 'domains', label: 'Domains' },
 ]
 
 export default function App() {
@@ -45,6 +47,7 @@ export default function App() {
         {active === 'dashboard' && <Dashboard status={status} onRefresh={refresh} />}
         {active === 'logs' && <Logs />}
         {active === 'results' && <Results jobs={results.jobs} coverage={results.coverage} />}
+        {active === 'domains' && <Domains />}
       </main>
     </div>
   )
