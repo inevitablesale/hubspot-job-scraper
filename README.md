@@ -4,7 +4,7 @@ A Playwright-powered crawler that discovers careers pages on arbitrary websites 
 
 ## What it does
 - Loads domains from `DOMAINS_FILE` (or `/etc/secrets/DOMAINS_FILE` on Render).
-- Visits each homepage, finds a careers page via nav links, anchor text (careers/jobs/join us/open positions), or `#open-positions` anchors.
+- Visits each homepage, finds a careers page via career-related nav/footer links or by probing common paths like `/careers` and `/jobs`.
 - Waits for JS to render, scrolls, and clicks prompts like “Open Positions” / “View Roles” to reveal dynamic listings.
 - Extracts jobs from:
   - Inline job cards, headings, buttons, and anchor lists

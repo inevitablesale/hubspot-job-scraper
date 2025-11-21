@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from playwright_crawler.runner import load_companies, run_all, run_domain_cleanup, run_maps_radar
@@ -15,6 +15,13 @@ app = FastAPI(title="HubSpot Job Hunter (Playwright)")
 
 STATIC_DIR = "static"
 BACKEND_VERSION = os.getenv("BACKEND_VERSION", "2025.11.21.1")
+
+CURRENT_PAGE = None
+
+
+def set_current_page(page):
+    global CURRENT_PAGE
+    CURRENT_PAGE = page
 
 if os.path.exists(os.path.join(STATIC_DIR, "assets")):
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
@@ -196,6 +203,19 @@ async def update_settings(payload: dict):
     settings_store = get_settings()
     settings_store.update(payload or {})
     return settings_store.snapshot()
+
+
+@app.get("/live")
+async def live():
+    global CURRENT_PAGE
+    if CURRENT_PAGE is None:
+        raise HTTPException(404, "No active browser session.")
+
+    try:
+        img_bytes = await CURRENT_PAGE.screenshot(type="jpeg", quality=60)
+        return Response(content=img_bytes, media_type="image/jpeg")
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @app.get("/logs")

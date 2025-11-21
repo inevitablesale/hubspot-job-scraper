@@ -7,8 +7,13 @@ CAREER_KEYWORDS = [
     "career",
     "careers",
     "jobs",
+    "job",
+    "hiring",
+    "join",
     "join-our-team",
     "join us",
+    "join-us",
+    "team",
     "open roles",
     "openings",
     "employment",
@@ -16,10 +21,8 @@ CAREER_KEYWORDS = [
     "roles",
     "positions",
     "work-with-us",
+    "company/careers",
 ]
-
-# Selectors that should be ignored when searching for careers links
-IGNORE_CONTAINERS = "header, nav, footer, #footer, .footer, .site-footer"
 
 # Common non-career destinations to skip
 SKIP_KEYWORDS = [
@@ -68,15 +71,6 @@ def _should_skip(text: str) -> bool:
     return any(k in lowered for k in SKIP_KEYWORDS)
 
 
-async def _inside_ignored(anchor) -> bool:
-    try:
-        return await anchor.evaluate(
-            "(el, selector) => !!el.closest(selector)", IGNORE_CONTAINERS
-        )
-    except Exception:
-        return False
-
-
 async def find_careers_link(page: Page, root_url: str, root_host: str) -> Optional[str]:
     """Locate a single careers link on the homepage following strict rules."""
 
@@ -87,8 +81,6 @@ async def find_careers_link(page: Page, root_url: str, root_host: str) -> Option
         href = await anchor.get_attribute("href")
         text = (await anchor.inner_text() or "").strip()
         if not href:
-            continue
-        if await _inside_ignored(anchor):
             continue
         if _should_skip(f"{href} {text}"):
             continue
@@ -101,10 +93,20 @@ async def find_careers_link(page: Page, root_url: str, root_host: str) -> Option
                 seen.add(absolute)
                 return absolute
 
-    # Fallback to common hash anchors on the same page
-    for candidate in ["#open-positions", "#careers", "#jobs"]:
-        abs_candidate = urljoin(root_url, candidate)
-        if _is_internal(abs_candidate, root_host):
-            return abs_candidate
+    for candidate_path in ["/careers", "/jobs", "/about/careers", "/careers/"]:
+        candidate = urljoin(root_url, candidate_path)
+        if not _is_internal(candidate, root_host):
+            continue
+        try:
+            response = await page.context.request.get(
+                candidate, max_redirects=2, timeout=8000
+            )
+        except Exception:
+            continue
+        status = response.status
+        if 200 <= status < 400:
+            final_url = str(response.url)
+            if _is_internal(final_url, root_host):
+                return final_url
 
     return None

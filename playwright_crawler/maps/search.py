@@ -86,6 +86,9 @@ async def _parse_card(card: ElementHandle) -> Dict:
 
 async def run_search(context: BrowserContext, query: str, max_results: int = 25) -> List[Dict]:
     page = await context.new_page()
+    from server import set_current_page
+
+    set_current_page(page)
     results: List[Dict] = []
     try:
         await page.goto("https://www.google.com/maps", wait_until="domcontentloaded")

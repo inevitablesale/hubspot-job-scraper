@@ -1,8 +1,13 @@
 import JobTable from '../components/JobTable'
+import LiveBotWindow from '../components/LiveBotWindow'
 
 export default function Results({ jobs = [], coverage = [] }) {
   return (
     <div className="space-y-6">
+      <div className="bg-panel rounded-2xl border border-slate-800 shadow-soft p-5">
+        <h2 className="text-xl font-semibold text-white mb-4">Live Google Maps Bot</h2>
+        <LiveBotWindow />
+      </div>
       <div className="bg-panel rounded-2xl border border-slate-800 shadow-soft p-5">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-xl font-semibold text-white">Company Coverage</h2>
