@@ -1,16 +1,21 @@
 import asyncio
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import aiohttp
 from scrapy.exceptions import DropItem
 
-NTFY_URL = "https://ntfy.sh/hubspot_job_alerts"
-EMAIL_TO = "christabb@gmail.com"
-SMS_TO = None
-SLACK_WEBHOOK = None
-JOB_CACHE_PATH = Path(".job_cache.json")
+NTFY_URL = os.getenv("NTFY_URL", "https://ntfy.sh/hubspot_job_alerts")
+EMAIL_TO = os.getenv("EMAIL_TO", "christabb@gmail.com")
+SMS_TO = os.getenv("SMS_TO")
+SLACK_WEBHOOK = os.getenv("SLACK_WEBHOOK")
+JOB_CACHE_PATH = Path(os.getenv("JOB_CACHE_PATH", ".job_cache.json"))
+
+# Optional role and fit filters
+ROLE_FILTER = {r.strip() for r in os.getenv("ROLE_FILTER", "").split(",") if r.strip()}
+REMOTE_ONLY = os.getenv("REMOTE_ONLY", "false").lower() == "true"
 
 
 class JobCache:
@@ -48,6 +53,20 @@ class NtfyNotifyPipeline:
         self.cache = JobCache(JOB_CACHE_PATH)
 
     def process_item(self, item, spider):
+        # Optional role-based filtering
+        role = item.get("role")
+        if ROLE_FILTER and role not in ROLE_FILTER:
+            spider.logger.debug(
+                "Dropping job %s due to ROLE_FILTER (%s not allowed)",
+                item.get("job_page"),
+                role,
+            )
+            raise DropItem("Role filtered out")
+
+        if REMOTE_ONLY and not any("remote" in s.lower() for s in item.get("signals", [])):
+            spider.logger.debug("Dropping job %s (REMOTE_ONLY enabled)", item.get("job_page"))
+            raise DropItem("Not remote-friendly")
+
         job_hash = hashlib.sha256(f"{item['company']}{item['job_page']}".encode("utf-8")).hexdigest()
         if self.cache.contains(job_hash):
             spider.logger.debug("Skipping duplicate job: %s", item["job_page"])

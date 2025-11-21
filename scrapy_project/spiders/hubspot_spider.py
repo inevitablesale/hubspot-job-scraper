@@ -130,7 +130,6 @@ class HubspotSpider(scrapy.Spider):
         "USER_AGENT": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0 Safari/537.36",
         "CONCURRENT_REQUESTS": 10,
         "ITEM_PIPELINES": {"scrapy_project.pipelines.NtfyNotifyPipeline": 1},
-        "LOG_LEVEL": "ERROR",
     }
 
     def start_requests(self):
