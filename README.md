@@ -31,6 +31,10 @@ Then run:
 python main.py
 ```
 
+### Render start command
+- **Background Worker (no web UI):** set the Start Command to `python run_spider.py` so the crawl runs and exits without binding a port.
+- **Web Service (with FastAPI UI):** if you want the browser trigger and live log, start uvicorn instead: `uvicorn server:app --host 0.0.0.0 --port $PORT`.
+
 Found roles are sent to `https://ntfy.sh/hubspot_job_alerts` with the configured email header.
 
 ### Cleaning Google redirect URLs
