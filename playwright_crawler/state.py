@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from .utils import normalize_domain
+from .maps import signals as map_signals
 
 
 DEFAULT_SETTINGS = {
@@ -246,6 +247,20 @@ class DomainRegistry:
                 continue
         return []
 
+    def _score_seed(self, company: str, category: Optional[str], existing_score: Optional[int], existing_signals: List[str]):
+        detail = {
+            "categories": [category] if category else [],
+            "description": company or "",
+            "tags": existing_signals or [],
+        }
+        scored = map_signals.score_detail(detail)
+        score = existing_score if existing_score is not None else 0
+        score = max(score, scored.get("score", 0))
+        signals = sorted(set((existing_signals or []) + scored.get("signals", [])))
+        if not scored.get("is_marketing_or_revops") and not scored.get("looks_like_hubspot_buyer"):
+            score = min(score, 40)
+        return score, signals
+
     def _load_and_normalize(self):
         raw = self._load_raw()
         normalized: List[Dict] = []
@@ -253,16 +268,18 @@ class DomainRegistry:
             if isinstance(entry, str):
                 domain = normalize_domain(entry)
                 if domain:
+                    score, signals = self._score_seed(entry, None, None, [])
                     normalized.append(
                         {
                             "domain": domain,
                             "company": entry,
                             "categoryName": None,
                             "source": "seed",
-                            "score": 100,
-                            "hubspot": None,
+                            "score": score,
+                            "hubspot": {},
                             "last_seen": None,
                             "failures": 0,
+                            "signals": signals,
                         }
                     )
             elif isinstance(entry, dict):
@@ -270,17 +287,20 @@ class DomainRegistry:
                 domain = normalize_domain(website) if website else None
                 if not domain:
                     continue
+                base_score = entry.get("score")
+                base_signals = entry.get("signals", [])
+                score, signals = self._score_seed(entry.get("title") or entry.get("company") or domain, entry.get("categoryName"), base_score, base_signals)
                 normalized.append(
                     {
                         "domain": domain,
                         "company": entry.get("title") or entry.get("company") or domain,
                         "categoryName": entry.get("categoryName"),
                         "source": entry.get("source") or "seed",
-                        "score": entry.get("score") or 100,
-                        "hubspot": entry.get("hubspot"),
+                        "score": score,
+                        "hubspot": entry.get("hubspot") or {},
                         "last_seen": entry.get("last_seen"),
                         "failures": entry.get("failures", 0),
-                        "signals": entry.get("signals", []),
+                        "signals": signals,
                     }
                 )
         self._cache = normalized

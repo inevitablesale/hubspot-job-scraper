@@ -18,6 +18,22 @@ KEYWORD_SIGNALS = {
 }
 
 
+def _is_marketing_category(cat: str) -> bool:
+    cat = cat.lower()
+    keywords = [
+        "marketing",
+        "consult",
+        "revops",
+        "crm",
+        "digital",
+        "advertising",
+        "inbound",
+        "growth",
+        "demand",
+    ]
+    return any(k in cat for k in keywords)
+
+
 def score_detail(detail: Dict) -> Dict:
     signals: List[str] = []
     is_marketing = False
@@ -30,10 +46,13 @@ def score_detail(detail: Dict) -> Dict:
     tags = [t.lower() for t in detail.get("tags", [])]
 
     for cat in categories:
-        if any(token in cat for token in ["marketing", "consultant", "agency", "advertising", "digital"]):
+        if _is_marketing_category(cat):
             is_marketing = True
             signals.append("Marketing/consulting category")
             score += 40
+        if "agency" in cat and _is_marketing_category(cat):
+            signals.append("Agency (marketing-aligned)")
+            score += 10
         if "software" in cat or "development" in cat:
             signals.append("Software/dev category")
             score += 15
