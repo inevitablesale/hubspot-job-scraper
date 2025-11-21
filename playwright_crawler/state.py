@@ -55,10 +55,18 @@ class CrawlerState:
         self.log_broker = LogBroker()
         self._max_logs = 500
 
-    def start_run(self, companies: List[Dict[str, str]]):
+    def set_running_mode(self, mode: str = "jobs"):
+        """Mark the state as running for the given mode immediately.
+
+        This is used by API triggers so the dashboard disables controls and
+        shows progress even before the crawler loop begins.
+        """
         self.running = True
-        self.status = "running"
+        self.status = "running" if mode == "jobs" else f"running:{mode}"
         self.last_run = datetime.utcnow().isoformat() + "Z"
+
+    def start_run(self, companies: List[Dict[str, str]]):
+        self.set_running_mode("jobs")
         self.jobs = []
         self.logs = []
         self.company_progress = {
@@ -75,9 +83,12 @@ class CrawlerState:
         self.high_priority = 0
         self.remote_us_matches = 0
 
-    def finish_run(self, delivered: int):
+    def mark_idle(self):
         self.running = False
         self.status = "idle"
+
+    def finish_run(self, delivered: int):
+        self.mark_idle()
         self.history.append(
             {
                 "time": self.last_run,

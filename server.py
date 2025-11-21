@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from playwright_crawler.runner import run_all, run_maps_radar, run_domain_cleanup
+from playwright_crawler.runner import load_companies, run_all, run_domain_cleanup, run_maps_radar
 from playwright_crawler.state import DEFAULT_SETTINGS, get_registry, get_state, get_settings
 
 app = FastAPI(title="HubSpot Job Hunter (Playwright)")
@@ -34,9 +34,16 @@ async def trigger_run():
     if app.state.running_task and not app.state.running_task.done():
         raise HTTPException(status_code=409, detail="Crawler already running")
 
+    companies = load_companies()
+    if not companies:
+        raise HTTPException(status_code=400, detail="No companies to crawl")
+
+    # Pre-mark running so the dashboard disables controls instantly.
+    state.start_run(companies)
+
     async def _runner():
         try:
-            await run_all()
+            await run_all(companies=companies, prestarted=True)
         finally:
             pass
 
@@ -54,7 +61,7 @@ async def trigger_maps_run(body: dict = None):
         raise HTTPException(status_code=409, detail="Crawler already running")
 
     async def _runner():
-        await run_maps_radar(queries=queries, limit=limit)
+        await run_maps_radar(queries=queries, limit=limit, manage_state=True)
 
     app.state.state.add_log("INFO", "Maps radar triggered via API")
     app.state.running_task = asyncio.create_task(_runner())
@@ -69,9 +76,17 @@ async def trigger_full(body: dict = None):
     if app.state.running_task and not app.state.running_task.done():
         raise HTTPException(status_code=409, detail="Crawler already running")
 
+    companies = load_companies()
+    if not companies:
+        raise HTTPException(status_code=400, detail="No companies to crawl")
+
+    state.start_run(companies)
+
     async def _runner():
-        await run_maps_radar(queries=body.get("queries"), limit=body.get("limit", 50), headless=headless)
-        await run_all(headless=headless)
+        await run_maps_radar(
+            queries=body.get("queries"), limit=body.get("limit", 50), headless=headless, manage_state=False
+        )
+        await run_all(headless=headless, companies=companies, prestarted=True)
 
     state.add_log("INFO", "Full sweep (maps + jobs) triggered via API")
     app.state.running_task = asyncio.create_task(_runner())

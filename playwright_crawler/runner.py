@@ -58,14 +58,19 @@ def load_companies() -> List[Dict[str, str]]:
     return companies
 
 
-async def run_all(headless: bool = True) -> Dict[str, int]:
+async def run_all(headless: bool = True, companies: List[Dict[str, str]] = None, prestarted: bool = False) -> Dict[str, int]:
     state = get_state()
-    companies = load_companies()
+    companies = companies or load_companies()
     if not companies:
         state.add_log("ERROR", "No companies to crawl")
+        state.mark_idle()
         return {"delivered": 0}
 
-    state.start_run(companies)
+    if not prestarted:
+        state.start_run(companies)
+    else:
+        # Ensure the dashboard sees an active run even if start_run was called earlier.
+        state.set_running_mode("jobs")
     delivered_total = 0
     notifier = Notifier(on_new_job=state.add_job)
 
@@ -90,36 +95,50 @@ async def run_all(headless: bool = True) -> Dict[str, int]:
     return {"delivered": delivered_total}
 
 
-async def run_maps_radar(queries: List[str] = None, limit: int = 50, headless: bool = True) -> Dict:
+async def run_maps_radar(
+    queries: List[str] = None,
+    limit: int = 50,
+    headless: bool = True,
+    manage_state: bool = True,
+) -> Dict:
     queries = queries or maps_search.DEFAULT_QUERIES
     registry = get_registry()
     state = get_state()
     added = 0
     seen = 0
 
-    async with browser_context(headless=headless) as context:
-        for query in queries:
-            state.add_log("INFO", f"Maps radar search: {query}")
-            listings = await maps_search.run_search(context, query)
-            for listing in listings:
-                seen += 1
-                detail = await maps_details.fetch_details(context, listing)
-                signals = map_signals.score_detail(detail)
-                candidate = domain_extractor.to_candidate(detail, signals)
-                if not candidate:
-                    continue
-                candidate["categoryName"] = listing.get("categoryName") or candidate.get("categoryName")
-                candidate["score"] = candidate.get("score", 0) + signals.get("score", 0)
-                candidate["signals"] = list(dict.fromkeys(candidate.get("signals", []) + signals.get("signals", [])))
-                if candidate.get("raw_website"):
-                    hubspot_info = await detect_hubspot_by_url(context, candidate["raw_website"], candidate["domain"])
-                    candidate["hubspot"] = hubspot_info
-                if await registry.add_candidate(candidate, source="maps"):
-                    added += 1
+    if manage_state:
+        state.set_running_mode("maps")
+
+    try:
+        async with browser_context(headless=headless) as context:
+            for query in queries:
+                state.add_log("INFO", f"Maps radar search: {query}")
+                listings = await maps_search.run_search(context, query)
+                for listing in listings:
+                    seen += 1
+                    detail = await maps_details.fetch_details(context, listing)
+                    signals = map_signals.score_detail(detail)
+                    candidate = domain_extractor.to_candidate(detail, signals)
+                    if not candidate:
+                        continue
+                    candidate["categoryName"] = listing.get("categoryName") or candidate.get("categoryName")
+                    candidate["score"] = candidate.get("score", 0) + signals.get("score", 0)
+                    candidate["signals"] = list(
+                        dict.fromkeys(candidate.get("signals", []) + signals.get("signals", []))
+                    )
+                    if candidate.get("raw_website"):
+                        hubspot_info = await detect_hubspot_by_url(context, candidate["raw_website"], candidate["domain"])
+                        candidate["hubspot"] = hubspot_info
+                    if await registry.add_candidate(candidate, source="maps"):
+                        added += 1
+                    if limit and added >= limit:
+                        break
                 if limit and added >= limit:
                     break
-            if limit and added >= limit:
-                break
+    finally:
+        if manage_state:
+            state.mark_idle()
     return {"queries": len(queries), "seen": seen, "added": added}
 
 

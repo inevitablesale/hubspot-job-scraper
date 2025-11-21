@@ -18,8 +18,8 @@ export default function App() {
 
   useEffect(() => {
     bootstrap()
-    const stateTimer = setInterval(syncState, 2000)
-    const resultTimer = setInterval(syncResults, 5000)
+    const stateTimer = setInterval(syncState, 1000)
+    const resultTimer = setInterval(syncResults, 3000)
     return () => {
       clearInterval(stateTimer)
       clearInterval(resultTimer)
