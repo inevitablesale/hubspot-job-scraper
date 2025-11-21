@@ -1,15 +1,21 @@
 import asyncio
+import os
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from playwright_crawler.runner import run_all
 from playwright_crawler.state import get_state
 
 app = FastAPI(title="HubSpot Job Hunter (Playwright)")
+
+FRONTEND_DIR = "frontend/dist"
+
+if os.path.exists(FRONTEND_DIR):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
 
 
 @app.on_event("startup")
@@ -86,15 +92,9 @@ async def ws_logs(websocket: WebSocket):
         await state.log_broker.unregister(queue)
 
 
-@app.get("/", response_class=HTMLResponse)
-async def index():
-    return """
-    <html>
-        <head><title>HubSpot Job Hunter</title></head>
-        <body style='font-family: sans-serif;'>
-            <h1>HubSpot Job Hunter (Playwright)</h1>
-            <p>POST to <code>/run</code> to start a crawl. Check <code>/status</code> for progress.</p>
-            <p>Live logs available at <code>/ws/logs</code>. Results at <code>/results</code>.</p>
-        </body>
-    </html>
-    """
+@app.get("/{full_path:path}")
+async def react_app(full_path: str):
+    index = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
+    return {"error": "Frontend not built"}
