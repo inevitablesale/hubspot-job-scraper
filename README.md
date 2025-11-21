@@ -59,6 +59,8 @@ python run_spider.py
 
 ## Configuration (env vars)
 - **DOMAINS_FILE**: JSON array of strings or objects (`{"website": ..., "title": ...}`); defaults to `/etc/secrets/DOMAINS_FILE`.
+- **DOMAINS_WRITE_PATH**: Optional writable copy of the domains JSON (e.g., `/data/domains_runtime.json`) when the source is a read-only Render secret.
+- **DOMAIN_EVENTS_FILE**: Optional path for domain added/removed events; defaults to `${DOMAINS_WRITE_PATH}.events.json`.
 - **USER_AGENT**: Override browser UA.
 - **PAGE_TIMEOUT_MS**: Per-action timeout (default 20000).
 - **LOG_LEVEL**: Python logging level (default INFO).

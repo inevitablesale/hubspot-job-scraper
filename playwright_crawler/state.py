@@ -152,22 +152,50 @@ class DomainRegistry:
     def __init__(self, dataset_env: str = "DOMAINS_FILE", stamp: Path = Path("/data/.domains_initialized")):
         self.dataset_env = dataset_env
         self.dataset_path = Path(os.getenv(dataset_env) or "/etc/secrets/DOMAINS_FILE")
-        self.events_path = Path(os.getenv("DOMAIN_EVENTS_FILE") or f"{self.dataset_path}.events.json")
+
+        # Choose a writable storage target. If the primary dataset path is read-only
+        # (e.g., Render secrets mount), fall back to a runtime copy under /data or
+        # a caller-provided DOMAINS_WRITE_PATH.
+        self.storage_path = Path(
+            os.getenv("DOMAINS_WRITE_PATH")
+            or ("/data/domains_runtime.json" if not self._is_writable(self.dataset_path) else str(self.dataset_path))
+        )
+
+        self.events_path = Path(
+            os.getenv("DOMAIN_EVENTS_FILE")
+            or f"{self.storage_path}.events.json"
+        )
         self.stamp = stamp
         self._lock = asyncio.Lock()
         self._cache: List[Dict] = []
         self._events: List[Dict] = []
         self._load_and_normalize()
 
-    def _load_raw(self) -> List[Dict]:
-        if not self.dataset_path.exists():
-            return []
+    def _is_writable(self, path: Path) -> bool:
         try:
-            data = json.loads(self.dataset_path.read_text())
-            if isinstance(data, list):
-                return data
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a"):
+                pass
+            return True
         except Exception:
-            return []
+            return False
+
+    def _load_raw(self) -> List[Dict]:
+        # Prefer the source dataset (secrets or configured path). If it is missing,
+        # fall back to the writable storage copy if present.
+        candidates = [self.dataset_path]
+        if self.storage_path not in candidates:
+            candidates.append(self.storage_path)
+
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text())
+                if isinstance(data, list):
+                    return data
+            except Exception:
+                continue
         return []
 
     def _load_and_normalize(self):
@@ -218,8 +246,12 @@ class DomainRegistry:
                 pass
 
     def _write(self):
-        self.dataset_path.parent.mkdir(parents=True, exist_ok=True)
-        self.dataset_path.write_text(json.dumps(self._cache, indent=2))
+        try:
+            self.storage_path.parent.mkdir(parents=True, exist_ok=True)
+            self.storage_path.write_text(json.dumps(self._cache, indent=2))
+        except Exception:
+            # Storage may be read-only; fail silently to avoid crashing the app.
+            pass
         self._write_events()
 
     def _write_events(self):
