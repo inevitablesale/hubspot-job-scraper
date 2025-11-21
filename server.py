@@ -104,6 +104,7 @@ async def index():
     <head>
         <meta charset=\"utf-8\" />
         <title>HubSpot Job Scraper</title>
+        <script src=\"https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js\"></script>
         <style>
             :root {
                 color-scheme: dark light;
@@ -184,11 +185,25 @@ async def index():
                 gap: 16px;
                 margin-top: 18px;
             }
+            .grid-visual {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                gap: 18px;
+                margin-top: 18px;
+            }
             .card {
                 padding: 14px 16px;
                 border-radius: 14px;
                 border: 1px solid #1f2937;
                 background: rgba(30, 41, 59, 0.7);
+            }
+            .card.hero {
+                background: radial-gradient(circle at 10% 10%, rgba(99,102,241,0.16), transparent 45%),
+                            radial-gradient(circle at 90% 10%, rgba(56,189,248,0.18), transparent 45%),
+                            rgba(15,23,42,0.9);
+                border-color: rgba(99,102,241,0.35);
+                box-shadow: 0 25px 90px rgba(56,189,248,0.12);
+                min-height: 240px;
             }
             .metric { color: #cbd5e1; font-size: 14px; margin: 0 0 6px; }
             .value { font-size: 22px; font-weight: 700; margin: 0; color: #f8fafc; }
@@ -218,6 +233,18 @@ async def index():
                 font-family: "SFMono-Regular", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
                 font-size: 13px;
                 line-height: 1.45;
+            }
+            #chart {
+                width: 100%;
+                height: 260px;
+            }
+            .chart-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 10px;
+                color: #e2e8f0;
+                font-weight: 600;
             }
             .line.error { color: #fca5a5; }
             .line.warn { color: #fbbf24; }
@@ -273,6 +300,23 @@ async def index():
                         <p class=\"value\" id=\"line-count\">0</p>
                     </div>
                 </div>
+                <div class=\"grid-visual\">
+                    <div class=\"card hero\">
+                        <div class=\"chart-header\">
+                            <span>Live Pulse</span>
+                            <span style=\"font-size:12px; color:#94a3b8;\">ECharts real-time stream</span>
+                        </div>
+                        <div id=\"chart\"></div>
+                    </div>
+                    <div class=\"card\">
+                        <p class=\"metric\">Interactive ideas</p>
+                        <p class=\"value\" style=\"font-size:14px; font-weight:600; color:#cbd5e1; line-height:1.6;\">
+                            • Animated pulse chart of log volume<br/>
+                            • Color-coded live console<br/>
+                            • Status pills that reflect crawler state in real time
+                        </p>
+                    </div>
+                </div>
                 <div class=\"log-shell\">
                     <div class=\"log-header\">
                         <span>Live Log</span>
@@ -293,7 +337,61 @@ async def index():
             const lastEventEl = document.getElementById('last-event');
             const lineCountEl = document.getElementById('line-count');
             const sseStatusEl = document.getElementById('sse-status');
+            const chartEl = document.getElementById('chart');
             let lineCount = 0;
+            let chart;
+            let chartData = [];
+
+            function initChart() {
+                if (!chartEl || typeof echarts === 'undefined') return;
+                chart = echarts.init(chartEl, null, { renderer: 'canvas' });
+                chart.setOption({
+                    animation: true,
+                    textStyle: { color: '#e2e8f0' },
+                    grid: { left: 10, right: 10, top: 20, bottom: 25, containLabel: true },
+                    xAxis: {
+                        type: 'category',
+                        boundaryGap: false,
+                        data: [],
+                        axisLine: { lineStyle: { color: '#334155' } },
+                        axisLabel: { color: '#cbd5e1' },
+                    },
+                    yAxis: {
+                        type: 'value',
+                        name: 'Lines',
+                        axisLine: { lineStyle: { color: '#334155' } },
+                        splitLine: { lineStyle: { color: 'rgba(148,163,184,0.2)' } },
+                        axisLabel: { color: '#cbd5e1' },
+                    },
+                    series: [
+                        {
+                            name: 'Lines streamed',
+                            type: 'line',
+                            smooth: true,
+                            showSymbol: false,
+                            data: [],
+                            areaStyle: {
+                                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                    { offset: 0, color: 'rgba(56,189,248,0.55)' },
+                                    { offset: 1, color: 'rgba(56,189,248,0.05)' },
+                                ]),
+                            },
+                            lineStyle: { color: '#22d3ee', width: 3 },
+                        },
+                    ],
+                    tooltip: { trigger: 'axis' },
+                });
+            }
+
+            function updateChart() {
+                if (!chart) return;
+                const labels = chartData.map(d => d.label);
+                const values = chartData.map(d => d.value);
+                chart.setOption({
+                    xAxis: { data: labels },
+                    series: [{ data: values }],
+                });
+            }
 
             function setRunningState(running) {
                 if (running) {
@@ -324,6 +422,10 @@ async def index():
                 lineCount += 1;
                 lineCountEl.textContent = lineCount;
                 logEl.scrollTop = logEl.scrollHeight;
+                const now = new Date();
+                chartData.push({ label: now.toLocaleTimeString(), value: lineCount });
+                if (chartData.length > 50) chartData.shift();
+                updateChart();
             }
 
             async function refreshStatus() {
@@ -374,6 +476,7 @@ async def index():
             startStream();
             refreshStatus();
             setInterval(refreshStatus, 4000);
+            initChart();
         </script>
     </body>
     </html>
