@@ -9,6 +9,7 @@ from .detect_pages import find_careers_link
 from .extractors import extract_jobs_from_html
 from .filters import is_blocked, allow_agency, passes_remote_filter
 from .signals import score_roles
+from .state import CrawlerState
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,12 @@ async def _click_prompts(page: Page):
             continue
 
 
-async def _process_page(page: Page, company: str, source_url: str, notifier) -> int:
+def _is_remote(text: str) -> bool:
+    lowered = text.lower()
+    return any(k in lowered for k in ["remote", "distributed", "work from home", "us remote", "united states (remote)"])
+
+
+async def _process_page(page: Page, company: str, source_url: str, notifier, state: Optional[CrawlerState]) -> int:
     html = await page.content()
     body_text = await page.inner_text("body") if await page.locator("body").count() else html
     jobs = extract_jobs_from_html(html, source_url)
@@ -45,8 +51,12 @@ async def _process_page(page: Page, company: str, source_url: str, notifier) -> 
             body_text,
         ])
         if not allow_agency(job_text):
+            if state:
+                state.add_log("INFO", f"Skipping agency job on {source_url}")
             continue
         if not passes_remote_filter(job_text):
+            if state:
+                state.add_log("INFO", f"Skipping non-remote job on {source_url}")
             continue
         score = score_roles(job_text)
         if not score:
@@ -60,15 +70,20 @@ async def _process_page(page: Page, company: str, source_url: str, notifier) -> 
             "role": score["role"],
             "score": score["score"],
             "signals": score.get("signals", []),
+            "remote": _is_remote(job_text),
         }
-        await notifier.notify_job(payload)
-        delivered += 1
+        added = await notifier.notify_job(payload)
+        if added and state:
+            state.add_log("SUCCESS", f"Matched {payload['title']} ({payload['score']}) at {company}")
+        if added:
+            delivered += 1
     return delivered
 
 
-async def crawl_domain(context: BrowserContext, company: str, url: str, notifier) -> Dict[str, Optional[int]]:
+async def crawl_domain(context: BrowserContext, company: str, url: str, notifier, state: Optional[CrawlerState] = None) -> Dict[str, Optional[int]]:
     if is_blocked(url):
-        logger.info("Skipping blocked domain %s", url)
+        if state:
+            state.add_log("WARNING", f"Skipping blocked domain {url}")
         return {"delivered": 0}
 
     page = await new_page(context)
@@ -78,11 +93,15 @@ async def crawl_domain(context: BrowserContext, company: str, url: str, notifier
         await gentle_scroll(page)
     except Exception as exc:
         logger.error("Failed to load %s: %s", url, exc)
+        if state:
+            state.add_log("ERROR", f"Failed to load {url}: {exc}")
         await page.close()
         return {"delivered": 0}
 
     careers_url = await find_careers_link(page, url)
     if not careers_url:
+        if state:
+            state.add_log("WARNING", f"No careers link found for {url}")
         await page.close()
         return {"delivered": 0}
 
@@ -94,12 +113,13 @@ async def crawl_domain(context: BrowserContext, company: str, url: str, notifier
         await gentle_scroll(page)
     except Exception as exc:
         logger.error("Failed to load careers page %s: %s", careers_url, exc)
+        if state:
+            state.add_log("ERROR", f"Failed to load careers page {careers_url}: {exc}")
         await page.close()
         return {"delivered": 0}
 
-    delivered = await _process_page(page, company, careers_url, notifier)
+    delivered = await _process_page(page, company, careers_url, notifier, state)
 
-    # inspect iframes/frames (ATS embeds)
     for frame in page.frames:
         try:
             html = await frame.content()
@@ -108,9 +128,6 @@ async def crawl_domain(context: BrowserContext, company: str, url: str, notifier
         jobs = extract_jobs_from_html(html, frame.url)
         if not jobs:
             continue
-        fake_page = type("Obj", (), {})()
-        setattr(fake_page, "content", lambda: html)
-        # reuse processing logic directly
         body_text = html
         for job in jobs:
             job_text = " ".join([job.get("title", ""), job.get("summary", ""), body_text])
@@ -130,9 +147,13 @@ async def crawl_domain(context: BrowserContext, company: str, url: str, notifier
                 "role": score["role"],
                 "score": score["score"],
                 "signals": score.get("signals", []),
+                "remote": _is_remote(job_text),
             }
-            await notifier.notify_job(payload)
-            delivered += 1
+            added = await notifier.notify_job(payload)
+            if added and state:
+                state.add_log("SUCCESS", f"Matched {payload['title']} ({payload['score']}) at {company}")
+            if added:
+                delivered += 1
 
     await page.close()
     return {"delivered": delivered}

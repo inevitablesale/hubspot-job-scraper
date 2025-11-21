@@ -30,6 +30,8 @@ python main.py
 - Trigger a run: `POST https://<your-service>/run`
 - Check status: `GET https://<your-service>/status`
 - Health: `GET https://<your-service>/health`
+- Live logs (WebSocket): `wss://<your-service>/ws/logs`
+- Results API: `GET https://<your-service>/results`
 
 ## Render (background worker)
 Use the same code but start with:
@@ -53,3 +55,16 @@ python run_spider.py
 - Consultant (threshold ≥ 50): HubSpot mentions, RevOps/Marketing Ops, workflows/automation, migration/onboarding, consultant/specialist/solutions architect titles, boosters for remote/contract/senior.
 
 Only pages crossing the threshold emit alerts. Remote-only and agency filters are applied before notification.
+
+## Frontend dashboard (React + Vite)
+- Located in `/frontend` with a Linear-style dark UI (Tailwind + Recharts).
+- Panels: Dashboard (status, run controls, coverage radial, run history chart), Live Logs (WebSocket console with filtering), Results Explorer (coverage table + sortable job table with signals and scores).
+- APIs used: `GET /status`, `POST /run`, `POST /stop`, `GET /results`, `WS /ws/logs`.
+
+Run locally:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Set `VITE_API_BASE` / `VITE_WS_BASE` if your FastAPI backend is on a different host/port.

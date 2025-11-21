@@ -3,7 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Callable
 
 import aiohttp
 
@@ -38,9 +38,10 @@ class JobCache:
 
 
 class Notifier:
-    def __init__(self):
+    def __init__(self, on_new_job: Optional[Callable[[Dict], None]] = None):
         self.cache = JobCache(JOB_CACHE_PATH)
         self.jobs: List[Dict[str, str]] = []
+        self.on_new_job = on_new_job
 
     def _hash_job(self, company: str, url: str) -> str:
         return hashlib.sha256(f"{company}{url}".encode("utf-8")).hexdigest()
@@ -51,6 +52,8 @@ class Notifier:
             return False
         self.cache.add(job_hash)
         self.jobs.append(job)
+        if self.on_new_job:
+            self.on_new_job(job)
         return True
 
     async def flush(self):
@@ -81,8 +84,10 @@ class Notifier:
         async with aiohttp.ClientSession() as session:
             await session.post(NTFY_URL, data=payload.encode("utf-8"), headers=headers)
         self.cache.persist()
+        self.jobs = []
 
-    async def notify_job(self, job: Dict[str, str]):
+    async def notify_job(self, job: Dict[str, str]) -> bool:
         if not self.add(job):
-            return
+            return False
         await self.flush()
+        return True
