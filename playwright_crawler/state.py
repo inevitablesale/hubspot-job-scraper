@@ -385,8 +385,13 @@ class DomainRegistry:
         return list(self._cache)
 
     def stats(self) -> Dict:
-        total = len(self._cache)
-        with_hubspot = len([c for c in self._cache if c.get("hubspot", {}).get("has_hubspot")])
+        # Guard against any malformed or legacy entries that may be "None" or missing
+        # the expected shape so the /state endpoint never 500s.
+        valid_entries = [c for c in self._cache if isinstance(c, dict)]
+        total = len(valid_entries)
+        with_hubspot = len(
+            [c for c in valid_entries if c.get("hubspot") and c.get("hubspot", {}).get("has_hubspot")]
+        )
         return {"total": total, "with_hubspot": with_hubspot}
 
     def get_changes(self, hours: int = 24) -> Dict:
