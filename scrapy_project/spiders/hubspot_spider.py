@@ -120,6 +120,21 @@ CAREER_HOSTS = {
     "lever.co",
 }
 
+# Treat these as off-domain ATS “mini roots” we’re allowed to crawl.
+ATS_HOSTS = CAREER_HOSTS
+
+# Heuristics for URLs on ATS hosts that likely correspond to jobs or job listings.
+ATS_JOB_URL_HINTS = [
+    "job",
+    "jobs",
+    "careers",
+    "positions",
+    "opportunities",
+    "opening",
+    "open-positions",
+    "vacancy",
+]
+
 DATASET_ENV_VAR = "DOMAINS_FILE"
 RENDER_SECRET_DATASET = Path("/etc/secrets/DOMAINS_FILE")
 
@@ -131,6 +146,11 @@ class HubspotSpider(scrapy.Spider):
         "CONCURRENT_REQUESTS": 10,
         "ITEM_PIPELINES": {"scrapy_project.pipelines.NtfyNotifyPipeline": 1},
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Track ATS URLs we’ve already crawled to avoid loops.
+        self.ats_seen = set()
 
     def start_requests(self):
         companies = self._load_companies()
@@ -159,11 +179,31 @@ class HubspotSpider(scrapy.Spider):
             text = sel.css("::text").get() or ""
             if not href:
                 continue
+
             full_url = self._safe_urljoin(root, href)
             if not full_url:
                 continue
+
             if self._should_skip_domain(full_url):
                 continue
+
+            # 1) Off-domain ATS “follow-then-parse” mode
+            if self._is_ats_host(full_url):
+                norm = self._normalize_ats_url(full_url)
+                if norm not in self.ats_seen:
+                    self.ats_seen.add(norm)
+                    yield scrapy.Request(
+                        url=full_url,
+                        callback=self.parse_ats_page,
+                        meta={
+                            "company": company,
+                            # Treat the ATS host as a secondary root
+                            "ats_root": self._get_host(full_url),
+                        },
+                    )
+                continue
+
+            # 2) Regular on-domain career links
             if self._is_internal(full_url, host_root) and self._looks_like_career(full_url, text):
                 if full_url not in seen:
                     seen.add(full_url)
@@ -186,6 +226,53 @@ class HubspotSpider(scrapy.Spider):
             "score": role_match["score"],
             "signals": role_match["signals"],
         }
+
+    def parse_ats_page(self, response):
+        """
+        Follow-then-parse mode for off-domain ATS hosts.
+        Treats the ATS host as a small internal site: we score the current page
+        and then follow other job-looking URLs on the same host.
+        """
+        company = response.meta["company"]
+        ats_root = response.meta.get("ats_root") or self._get_host(response.url)
+
+        text = response.text.lower()
+        role_match = self._evaluate_roles(text)
+        if role_match:
+            yield {
+                "company": company,
+                "job_page": response.url,
+                "role": role_match["role"],
+                "score": role_match["score"],
+                "signals": role_match["signals"],
+            }
+
+        # Discover more job pages within the ATS host
+        for sel in response.css("a"):
+            href = sel.attrib.get("href")
+            if not href:
+                continue
+
+            full_url = self._safe_urljoin(response.url, href)
+            if not full_url:
+                continue
+
+            if not self._is_internal(full_url, ats_root):
+                continue
+
+            if not self._looks_like_ats_job_url(full_url):
+                continue
+
+            norm = self._normalize_ats_url(full_url)
+            if norm in self.ats_seen:
+                continue
+
+            self.ats_seen.add(norm)
+            yield scrapy.Request(
+                url=full_url,
+                callback=self.parse_ats_page,
+                meta={"company": company, "ats_root": ats_root},
+            )
 
     def _get_host(self, url):
         netloc = urlparse(url).netloc
@@ -433,6 +520,46 @@ class HubspotSpider(scrapy.Spider):
             host = host[4:]
         if any(host == sd or host.endswith("." + sd) for sd in SKIP_DOMAINS):
             return True
+        return False
+
+    def _is_ats_host(self, url: str) -> bool:
+        """Return True if the URL belongs to a known ATS host."""
+        host = urlparse(url).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return any(host == ats or host.endswith("." + ats) for ats in ATS_HOSTS)
+
+    def _normalize_ats_url(self, url: str) -> str:
+        """
+        Normalization for ATS URLs to dedupe:
+        use host + path (without querystring noise).
+        """
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        path = parsed.path or "/"
+        # Collapse trailing slashes so /jobs and /jobs/ are the same
+        if path != "/":
+            path = path.rstrip("/")
+        return f"{host}{path}"
+
+    def _looks_like_ats_job_url(self, url: str) -> bool:
+        """
+        Lightweight heuristic for ATS job/listing URLs:
+        check for job-ish tokens in the path or obvious job IDs in the querystring.
+        """
+        parsed = urlparse(url)
+        path = parsed.path.lower()
+        if any(hint in path for hint in ATS_JOB_URL_HINTS):
+            return True
+
+        query = parsed.query.lower()
+        # Pick up common patterns like gh_jid, ?lever-origin, etc.
+        job_id_hints = ["gh_jid", "lever-", "ashby", "jobid", "job_id"]
+        if any(hint in query for hint in job_id_hints):
+            return True
+
         return False
 
     def _resolve_dataset_path(self):
