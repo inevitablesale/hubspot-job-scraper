@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import random
 import re
 from pathlib import Path
@@ -301,9 +300,8 @@ async def crawl(domains: List[str], output_file: Optional[str]) -> None:
         return
 
     ua = random.choice(USER_AGENTS)
-    async with async_playwright() as p:
-        channel = os.getenv("PLAYWRIGHT_BROWSER_CHANNEL", "chrome")
-        browser = await p.chromium.launch(channel=channel, headless=True)
+    async with async_playwright() as playwright:
+        browser = await playwright.chromium.launch(channel="chrome", headless=True)
         context = await browser.new_context(user_agent=ua)
         await context.route("**/*", block_media)
 
