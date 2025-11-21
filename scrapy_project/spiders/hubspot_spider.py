@@ -316,6 +316,9 @@ class HubspotSpider(scrapy.Spider):
         developer_score, developer_signals = self._score_developer(text)
         consultant_score, consultant_signals = self._score_consultant(text)
 
+        if self._is_agency_page(text):
+            return None
+
         # Subtype classification
         senior = any(k in text for k in SENIOR_CONSULTANT_INTENT)
         architect = any(k in text for k in ARCHITECT_INTENT)
@@ -428,14 +431,15 @@ class HubspotSpider(scrapy.Spider):
                 ),
             ],
         )
-
-        # Skip recruiter agencies unless explicitly allowed
-        if "agency" in text or "staffing" in text or "recruiting" in text:
-            if not os.getenv("ALLOW_AGENCIES"):
-                return 0, []
-            signals.append("Agency Allowed")
-
         return score, signals
+
+    def _is_agency_page(self, text: str) -> bool:
+        """Drop recruiting/staffing pages unless explicitly allowed."""
+        if "agency" in text or "staffing" in text or "recruiting" in text:
+            if os.getenv("ALLOW_AGENCIES"):
+                return False
+            return True
+        return False
 
     def _apply_scoring_rules(self, text, rules):
         score = 0
