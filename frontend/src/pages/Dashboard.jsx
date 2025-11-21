@@ -4,7 +4,7 @@ import AnimatedCount from '../components/AnimatedCount'
 import ProgressRadial from '../components/ProgressRadial'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
-export default function Dashboard({ status, onRefresh }) {
+export default function Dashboard({ status, onRefresh, version }) {
   const history = status?.history || []
   const processed = status?.processed_companies || 0
   const total = status?.total_companies || 0
@@ -16,6 +16,9 @@ export default function Dashboard({ status, onRefresh }) {
           <div>
             <p className="text-slate-400 text-sm">HubSpot Job Discovery Agent</p>
             <h1 className="text-3xl font-semibold text-white">Control Room</h1>
+            {version && (
+              <p className="text-xs text-slate-500 mt-1">Backend {version.backendVersion} · Frontend {version.frontendVersion}</p>
+            )}
           </div>
           <StatusPill status={status?.status || 'idle'} />
           <RunControls running={status?.running} onStatus={onRefresh} />

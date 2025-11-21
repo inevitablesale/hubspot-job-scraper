@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { runCrawl, stopCrawl } from '../api/crawler'
+import { runCrawl, stopCrawl, runMaps, runFull } from '../api/crawler'
 
 export default function RunControls({ running, onStatus }) {
   const [loading, setLoading] = useState(false)
@@ -13,6 +13,32 @@ export default function RunControls({ running, onStatus }) {
       onStatus && onStatus()
     } catch (err) {
       setError(err?.response?.data?.detail || 'Failed to start')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleMaps = async () => {
+    try {
+      setLoading(true)
+      await runMaps()
+      setError(null)
+      onStatus && onStatus()
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to start maps')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleFull = async () => {
+    try {
+      setLoading(true)
+      await runFull()
+      setError(null)
+      onStatus && onStatus()
+    } catch (err) {
+      setError(err?.response?.data?.detail || 'Failed to start full sweep')
     } finally {
       setLoading(false)
     }
@@ -38,6 +64,20 @@ export default function RunControls({ running, onStatus }) {
         className="px-4 py-2 rounded-lg bg-emerald-500 text-black font-semibold shadow-soft disabled:opacity-60"
       >
         {running ? 'Running…' : 'Start Crawl'}
+      </button>
+      <button
+        onClick={handleMaps}
+        disabled={running || loading}
+        className="px-4 py-2 rounded-lg bg-indigo-500/80 text-white font-semibold shadow-soft disabled:opacity-60"
+      >
+        Radar
+      </button>
+      <button
+        onClick={handleFull}
+        disabled={running || loading}
+        className="px-4 py-2 rounded-lg bg-cyan-500/80 text-white font-semibold shadow-soft disabled:opacity-60"
+      >
+        Full Sweep
       </button>
       <button
         onClick={handleStop}

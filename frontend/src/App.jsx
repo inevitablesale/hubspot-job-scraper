@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Dashboard from './pages/Dashboard'
 import Logs from './pages/Logs'
 import Results from './pages/Results'
 import Domains from './pages/Domains'
-import useStatus from './hooks/useStatus'
+import { useSyncStore } from './store/useSyncStore'
 
 const tabs = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -14,7 +14,17 @@ const tabs = [
 
 export default function App() {
   const [active, setActive] = useState('dashboard')
-  const { status, results, refresh } = useStatus()
+  const { state, results, bootstrap, syncState, syncResults, version } = useSyncStore()
+
+  useEffect(() => {
+    bootstrap()
+    const stateTimer = setInterval(syncState, 2000)
+    const resultTimer = setInterval(syncResults, 5000)
+    return () => {
+      clearInterval(stateTimer)
+      clearInterval(resultTimer)
+    }
+  }, [bootstrap, syncState, syncResults])
 
   return (
     <div className="min-h-screen bg-surface text-white">
@@ -44,7 +54,7 @@ export default function App() {
       </header>
 
       <main className="px-6 py-6 space-y-6">
-        {active === 'dashboard' && <Dashboard status={status} onRefresh={refresh} />}
+        {active === 'dashboard' && <Dashboard status={state?.snapshot || state || {}} onRefresh={syncState} version={version} />}
         {active === 'logs' && <Logs />}
         {active === 'results' && <Results jobs={results.jobs} coverage={results.coverage} />}
         {active === 'domains' && <Domains />}

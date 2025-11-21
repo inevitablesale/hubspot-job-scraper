@@ -77,9 +77,9 @@ python run_spider.py
 Only pages crossing the threshold emit alerts. Remote-only and agency filters are applied before notification.
 
 ## Frontend dashboard (React + Vite)
-- Located in `/frontend` with a Linear-style dark UI (Tailwind + Recharts).
-- Panels: Dashboard (status, run controls, coverage radial, run history chart), Live Logs (WebSocket console with filtering), Results Explorer (coverage table + sortable job table with signals and scores).
-- APIs used: `GET /status`, `POST /run`, `POST /stop`, `GET /results`, `WS /ws/logs`.
+- Located in `/frontend` with a Linear-style dark UI (Tailwind + Recharts + Zustand store).
+- Panels: Dashboard (status, run controls, coverage radial, run history chart), Live Logs (SSE console with filtering), Results Explorer (coverage table + sortable job table with signals and scores).
+- APIs used: `/schema` (UI config), `/state` (live sync), `/version` (bundle/version parity), `/run`, `/run/maps`, `/run/full`, `/stop`, `/results`, `/logs/stream`, `/domains`, `/domains/changes`.
 
 ### Domains view + Maps Radar
 - New **Domains** tab lists all known agencies/domains, their scores, HubSpot detection confidence, last seen, and signals. You can remove domains inline.

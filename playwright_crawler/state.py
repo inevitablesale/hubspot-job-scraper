@@ -8,6 +8,15 @@ from typing import Dict, List, Optional
 from .utils import normalize_domain
 
 
+DEFAULT_SETTINGS = {
+    "remote_only": os.getenv("REMOTE_ONLY", "false").lower() == "true",
+    "us_only": os.getenv("US_ONLY", "false").lower() == "true",
+    "allow_agencies": os.getenv("ALLOW_AGENCIES", "false").lower() == "true",
+    "log_level": os.getenv("LOG_LEVEL", "ERROR"),
+    "headless": os.getenv("HEADLESS", "true").lower() != "false",
+}
+
+
 class LogBroker:
     def __init__(self):
         self._subscribers: List[asyncio.Queue] = []
@@ -139,6 +148,45 @@ def get_state() -> CrawlerState:
     except NameError:
         _STATE = CrawlerState()
         return _STATE
+
+
+class SettingsStore:
+    """Minimal settings holder persisted to a writable path.
+
+    Settings are intentionally simple key/value pairs so the dashboard can
+    round-trip configuration without code changes.
+    """
+
+    def __init__(self, path: Path = Path(os.getenv("SETTINGS_FILE") or "/data/settings.json")):
+        self.path = path
+        self._data = DEFAULT_SETTINGS.copy()
+        self._load()
+
+    def _load(self):
+        if not self.path.exists():
+            return
+        try:
+            data = json.loads(self.path.read_text())
+            if isinstance(data, dict):
+                self._data.update(data)
+        except Exception:
+            pass
+
+    def _write(self):
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self._data, indent=2))
+        except Exception:
+            pass
+
+    def snapshot(self) -> Dict:
+        return dict(self._data)
+
+    def update(self, payload: Dict):
+        for key, value in payload.items():
+            if key in DEFAULT_SETTINGS:
+                self._data[key] = value
+        self._write()
 
 
 class DomainRegistry:
@@ -377,3 +425,12 @@ def get_registry() -> DomainRegistry:
     except NameError:
         _REGISTRY = DomainRegistry()
         return _REGISTRY
+
+
+def get_settings() -> SettingsStore:
+    global _SETTINGS
+    try:
+        return _SETTINGS
+    except NameError:
+        _SETTINGS = SettingsStore()
+        return _SETTINGS
