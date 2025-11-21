@@ -12,10 +12,10 @@ from playwright_crawler.state import get_state
 
 app = FastAPI(title="HubSpot Job Hunter (Playwright)")
 
-FRONTEND_DIR = "frontend/dist"
+STATIC_DIR = "static"
 
-if os.path.exists(FRONTEND_DIR):
-    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+if os.path.exists(os.path.join(STATIC_DIR, "assets")):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
 
 @app.on_event("startup")
@@ -92,9 +92,17 @@ async def ws_logs(websocket: WebSocket):
         await state.log_broker.unregister(queue)
 
 
+@app.get("/")
+async def serve_index():
+    index = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index):
+        return FileResponse(index)
+    return {"error": "Frontend not built"}
+
+
 @app.get("/{full_path:path}")
 async def react_app(full_path: str):
-    index = os.path.join(FRONTEND_DIR, "index.html")
+    index = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(index):
         return FileResponse(index)
     return {"error": "Frontend not built"}

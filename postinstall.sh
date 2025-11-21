@@ -1,3 +1,24 @@
 #!/usr/bin/env bash
-set -e
-python -m playwright install --with-deps chromium
+set -euxo pipefail
+
+echo "=== Install backend dependencies ==="
+pip install --upgrade pip
+
+# Install backend deps
+pip install -r requirements.txt
+
+echo "=== Install Playwright browsers ==="
+# Install Chromium only (fastest + compatible with Render)
+playwright install chromium --with-deps
+
+echo "=== Building frontend ==="
+cd frontend
+npm install
+npm run build
+cd ..
+
+echo "=== Copying frontend build to ./static ==="
+mkdir -p static
+cp -r frontend/dist/* static/
+
+echo "=== Build done ==="
