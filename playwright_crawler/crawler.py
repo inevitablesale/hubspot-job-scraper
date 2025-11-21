@@ -48,16 +48,22 @@ def _remote_flag(text: str) -> bool:
 
 
 async def _load_page(page, url: str, state: Optional[CrawlerState], label: str) -> bool:
-    try:
-        await page.goto(url, wait_until="load")
-        await page.wait_for_timeout(1500)
-        await gentle_scroll(page)
-        return True
-    except Exception as exc:
-        if state:
-            state.add_log("ERROR", f"Failed to load {label} {url}: {exc}")
-        logger.error("Failed to load %s %s: %s", label, url, exc)
-        return False
+    delays = [0, 1200, 2500]
+    for attempt, delay in enumerate(delays, start=1):
+        try:
+            await page.goto(url, wait_until="load")
+            await page.wait_for_timeout(1500)
+            await gentle_scroll(page)
+            return True
+        except Exception as exc:
+            if state:
+                state.add_log("WARNING", f"Retry {attempt} loading {label} {url}: {exc}")
+            logger.warning("Retry %s loading %s %s: %s", attempt, label, url, exc)
+            await page.wait_for_timeout(delay)
+    if state:
+        state.add_log("ERROR", f"Failed to load {label} {url}")
+    logger.error("Failed to load %s %s after retries", label, url)
+    return False
 
 
 async def _log(state: Optional[CrawlerState], level: str, message: str):
@@ -66,6 +72,8 @@ async def _log(state: Optional[CrawlerState], level: str, message: str):
 
 
 async def _process_role_page(context: BrowserContext, company: str, role_url: str, root_host: str, notifier, state: Optional[CrawlerState]):
+    if not role_url:
+        return 0
     if not _is_allowed_target(role_url, root_host):
         await _log(state, "INFO", f"Skipping external role {role_url}")
         return 0
@@ -81,13 +89,13 @@ async def _process_role_page(context: BrowserContext, company: str, role_url: st
             return 0
 
         page_text = " ".join([role_data.get("title", ""), role_data.get("body_text", "")])
+        scored = score_roles(page_text)
+        if not scored:
+            return 0
+
         if not allow_agency(page_text):
             return 0
         if not passes_remote_filter(page_text):
-            return 0
-
-        scored = score_roles(page_text)
-        if not scored:
             return 0
 
         await _log(state, "SUCCESS", f"{LOG_PREFIX['valid']}: {role_data['title']}")
@@ -154,7 +162,10 @@ async def crawl_domain(context: BrowserContext, company: str, url: str, notifier
 
     delivered = 0
     for listing in listings:
-        role_url = urljoin(careers_url, listing.get("url") or careers_url)
+        raw_url = listing.get("url")
+        if not raw_url:
+            continue
+        role_url = urljoin(careers_url, raw_url)
         delivered += await _process_role_page(context, company, role_url, root_host, notifier, state)
 
     await page.close()

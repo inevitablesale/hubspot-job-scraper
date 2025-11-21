@@ -110,6 +110,15 @@ def _is_allowed_host(target: str, root_host: str) -> bool:
     return not host or host == root_host or host.endswith("." + root_host) or host in ATS_ALLOWLIST
 
 
+def _normalize_url(base_url: str, href: Optional[str]) -> Optional[str]:
+    if not href:
+        return None
+    try:
+        return urljoin(base_url, href)
+    except Exception:
+        return None
+
+
 def _matches_hubspot_title(title: str) -> bool:
     lowered = title.lower()
     return any(k in lowered for k in HUBSPOT_TITLE_KEYWORDS)
@@ -124,6 +133,15 @@ async def _collect_listings_from_context(page: Page, base_url: str, root_host: s
             continue
         for el in elements:
             try:
+                inside_ignored = await el.evaluate(
+                    "(el) => !!el.closest('header, nav, footer, .footer, .site-footer')"
+                )
+            except Exception:
+                inside_ignored = False
+            if inside_ignored:
+                continue
+
+            try:
                 text = _clean_text(await el.inner_text())
             except Exception:
                 text = ""
@@ -134,7 +152,9 @@ async def _collect_listings_from_context(page: Page, base_url: str, root_host: s
                 href = None
             if not text:
                 continue
-            url = urljoin(base_url, href) if href else base_url
+            url = _normalize_url(base_url, href)
+            if not url:
+                continue
             if not _matches_hubspot_title(text):
                 continue
             if not _is_allowed_host(url, root_host):
@@ -150,13 +170,15 @@ async def _run_search_if_available(page: Page):
         return
     if not search_input:
         return
-    try:
-        await search_input.click()
-        await search_input.fill(SEARCH_KEYWORDS[0])
-        await search_input.press("Enter")
-        await page.wait_for_timeout(1200)
-    except Exception:
-        return
+    for term in SEARCH_KEYWORDS:
+        try:
+            await search_input.click()
+            await search_input.fill(term)
+            await search_input.press("Enter")
+            await page.wait_for_timeout(1500)
+            break
+        except Exception:
+            continue
 
 
 async def _click_next(page: Page) -> bool:
@@ -165,7 +187,7 @@ async def _click_next(page: Page) -> bool:
             locator = page.locator(selector)
             if await locator.count() > 0:
                 await locator.first.click(timeout=1500)
-                await page.wait_for_timeout(1200)
+                await page.wait_for_timeout(1400)
                 return True
         except Exception:
             continue
@@ -224,6 +246,16 @@ async def extract_hubspot_listings(page: Page, base_url: str, root_host: str) ->
             if await _infinite_scroll(page):
                 last_count = len(listings)
                 continue
+            paged = False
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue
+                if await _click_next(frame):
+                    last_count = len(listings)
+                    paged = True
+                    break
+            if paged:
+                continue
             break
         last_count = len(listings)
 
@@ -272,8 +304,16 @@ async def validate_role_page(page: Page) -> Optional[Dict[str, str]]:
         return None
 
     try:
-        multi_loc = page.locator(",".join(MULTI_ROLE_GUARD))
-        if await multi_loc.count() > 1:
+        multi_links = []
+        for selector in MULTI_ROLE_GUARD:
+            loc = page.locator(selector)
+            count = min(await loc.count(), 8)
+            for idx in range(count):
+                href = await loc.nth(idx).get_attribute("href")
+                normalized = _normalize_url(page.url, href) if href else None
+                if normalized and normalized != page.url and normalized not in multi_links:
+                    multi_links.append(normalized)
+        if len(multi_links) > 1:
             return None
     except Exception:
         pass
