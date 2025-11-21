@@ -1,0 +1,8 @@
+aiohttp>=3.9.0
+fastapi
+uvicorn
+playwright
+bs4
+lxml
+python-dotenv
+selectolax
