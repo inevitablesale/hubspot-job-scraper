@@ -23,6 +23,7 @@ ITEM_PIPELINES = {
 LOG_LEVEL = os.getenv("LOG_LEVEL", "ERROR")
 
 DOWNLOADER_MIDDLEWARES = {
+    "scrapy_project.middlewares.LogRequestsMiddleware": 5,
     "scrapy.downloadermiddlewares.retry.RetryMiddleware": None,
     "scrapy_project.middlewares.ExponentialBackoffRetryMiddleware": 550,
     "scrapy_project.middlewares.DomainThrottleMiddleware": 560,

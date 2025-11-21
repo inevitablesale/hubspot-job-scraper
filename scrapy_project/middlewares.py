@@ -10,6 +10,12 @@ from twisted.internet.error import DNSLookupError
 from twisted.internet.task import deferLater
 
 
+class LogRequestsMiddleware:
+    def process_request(self, request, spider):
+        spider.logger.info(f"Visiting: {request.url}")
+        return None
+
+
 class DomainThrottleMiddleware:
     """Apply a minimal delay between requests per domain to avoid burstiness."""
 
