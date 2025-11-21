@@ -56,7 +56,10 @@ export const useSyncStore = create((set, get) => ({
   async bootstrap() {
     const { syncSchema, syncState, syncResults, syncVersion, syncSettings } = get()
     set({ loading: true })
-    await Promise.all([syncSchema(), syncState(), syncResults(), syncVersion(), syncSettings()])
-    set({ loading: false })
+    try {
+      await Promise.all([syncSchema(), syncState(), syncResults(), syncVersion(), syncSettings()])
+    } finally {
+      set({ loading: false })
+    }
   },
 }))

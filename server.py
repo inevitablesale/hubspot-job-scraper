@@ -45,7 +45,7 @@ async def trigger_run():
         try:
             await run_all(companies=companies, prestarted=True)
         finally:
-            pass
+            app.state.running_task = None
 
     state.add_log("INFO", "Run triggered via API")
     app.state.running_task = asyncio.create_task(_runner())
@@ -61,7 +61,10 @@ async def trigger_maps_run(body: dict = None):
         raise HTTPException(status_code=409, detail="Crawler already running")
 
     async def _runner():
-        await run_maps_radar(queries=queries, limit=limit, manage_state=True)
+        try:
+            await run_maps_radar(queries=queries, limit=limit, manage_state=True)
+        finally:
+            app.state.running_task = None
 
     app.state.state.add_log("INFO", "Maps radar triggered via API")
     app.state.running_task = asyncio.create_task(_runner())
@@ -83,10 +86,13 @@ async def trigger_full(body: dict = None):
     state.start_run(companies)
 
     async def _runner():
-        await run_maps_radar(
-            queries=body.get("queries"), limit=body.get("limit", 50), headless=headless, manage_state=False
-        )
-        await run_all(headless=headless, companies=companies, prestarted=True)
+        try:
+            await run_maps_radar(
+                queries=body.get("queries"), limit=body.get("limit", 50), headless=headless, manage_state=False
+            )
+            await run_all(headless=headless, companies=companies, prestarted=True)
+        finally:
+            app.state.running_task = None
 
     state.add_log("INFO", "Full sweep (maps + jobs) triggered via API")
     app.state.running_task = asyncio.create_task(_runner())
@@ -98,6 +104,7 @@ async def stop_run():
     if not app.state.running_task or app.state.running_task.done():
         raise HTTPException(status_code=409, detail="No run in progress")
     app.state.running_task.cancel()
+    app.state.running_task = None
     return {"status": "cancelling"}
 
 
@@ -105,6 +112,9 @@ async def stop_run():
 async def status():
     state = app.state.state
     snapshot = state.snapshot()
+    if app.state.running_task and not app.state.running_task.done():
+        snapshot["running"] = True
+        snapshot["status"] = snapshot.get("status") or "running"
     snapshot["coverage"] = state.coverage()
     return snapshot
 
@@ -114,8 +124,12 @@ async def live_state():
     state = app.state.state
     registry = app.state.registry
     settings = app.state.settings
+    snapshot = state.snapshot()
+    if app.state.running_task and not app.state.running_task.done():
+        snapshot["running"] = True
+        snapshot["status"] = snapshot.get("status") or "running"
     return {
-        "snapshot": state.snapshot(),
+        "snapshot": snapshot,
         "coverage": state.coverage(),
         "domains": registry.stats(),
         "history": state.history,
