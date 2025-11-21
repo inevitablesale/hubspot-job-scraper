@@ -39,6 +39,12 @@ class LogBroker:
                 continue
 
 
+class EventBroker(LogBroker):
+    """Generic event broadcaster (state/results/domains/logs) with queues."""
+
+    pass
+
+
 class CrawlerState:
     def __init__(self):
         self.running: bool = False
@@ -53,6 +59,7 @@ class CrawlerState:
         self.high_priority: int = 0
         self.remote_us_matches: int = 0
         self.log_broker = LogBroker()
+        self.event_broker = EventBroker()
         self._max_logs = 500
 
     def set_running_mode(self, mode: str = "jobs"):
@@ -82,10 +89,12 @@ class CrawlerState:
         self.processed_companies = 0
         self.high_priority = 0
         self.remote_us_matches = 0
+        self._broadcast_state()
 
     def mark_idle(self):
         self.running = False
         self.status = "idle"
+        self._broadcast_state()
 
     def finish_run(self, delivered: int):
         self.mark_idle()
@@ -97,6 +106,7 @@ class CrawlerState:
             }
         )
         self.history = self.history[-10:]
+        self._broadcast_state()
 
     def add_log(self, level: str, message: str):
         entry = {
@@ -107,6 +117,7 @@ class CrawlerState:
         self.logs.append(entry)
         self.logs = self.logs[-self._max_logs :]
         self.log_broker.publish(entry)
+        self.event_broker.publish({"type": "log", **entry})
 
     def add_job(self, job: Dict):
         job["ts"] = datetime.utcnow().isoformat() + "Z"
@@ -115,6 +126,8 @@ class CrawlerState:
             self.high_priority += 1
         if job.get("remote"):
             self.remote_us_matches += 1
+        self.event_broker.publish({"type": "result", "payload": job})
+        self._broadcast_state()
 
     def mark_company_status(self, company: str, status: str, jobs: int = 0):
         if company in self.company_progress:
@@ -123,8 +136,21 @@ class CrawlerState:
             self.company_progress[company]["jobs"] += jobs
         if status == "done":
             self.processed_companies += 1
+        payload = {
+            "type": "domain",
+            "payload": {
+                "company": company,
+                "domain": self.company_progress.get(company, {}).get("url"),
+                "status": "scanned" if status == "done" else status,
+                "jobs": self.company_progress.get(company, {}).get("jobs", 0),
+                "lastScan": self.company_progress.get(company, {}).get("last_scan"),
+            },
+        }
+        self.event_broker.publish(payload)
+        self._broadcast_state()
 
     def snapshot(self) -> Dict:
+        coverage_summary = self._coverage_summary()
         return {
             "running": self.running,
             "status": self.status,
@@ -135,7 +161,30 @@ class CrawlerState:
             "high_priority": self.high_priority,
             "remote_us": self.remote_us_matches,
             "history": list(reversed(self.history[-10:])),
+            "companiesScanned": self.processed_companies,
+            "jobsFound": len(self.jobs),
+            "highPriorityJobs": self.high_priority,
+            "usRemoteJobs": self.remote_us_matches,
+            "coverage": coverage_summary,
         }
+
+    def live_state(self) -> Dict:
+        snapshot = self.snapshot()
+        snapshot["coverageTable"] = self.coverage()
+        return snapshot
+
+    def _coverage_summary(self) -> Dict:
+        total = self.total_companies or len(self.company_progress)
+        count = self.processed_companies
+        percent = (count / total * 100) if total else 0
+        return {"count": count, "total": total, "percent": percent}
+
+    def _broadcast_state(self):
+        payload = {
+            "type": "state",
+            "payload": self.live_state(),
+        }
+        self.event_broker.publish(payload)
 
     def coverage(self) -> List[Dict]:
         return [

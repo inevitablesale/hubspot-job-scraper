@@ -19,13 +19,7 @@ CAREER_KEYWORDS = [
 ]
 
 # Selectors that should be ignored when searching for careers links
-IGNORE_CONTAINERS = [
-    "header a",
-    "nav a",
-    "footer a",
-    ".footer a",
-    ".site-footer a",
-]
+IGNORE_CONTAINERS = "header, nav, footer, #footer, .footer, .site-footer"
 
 # Common non-career destinations to skip
 SKIP_KEYWORDS = [
@@ -33,11 +27,26 @@ SKIP_KEYWORDS = [
     "legal",
     "terms",
     "contact",
-    "blog",
+    "about",
+    "resources",
     "pricing",
+    "blog",
+    "news",
+    "press",
+    "events",
     "partners",
-    "login",
     "support",
+    "facebook",
+    "instagram",
+    "linkedin",
+    "twitter",
+    "x.com",
+    "youtube",
+    "medium",
+    "tiktok",
+    "mailchimp",
+    "wix",
+    "shopify",
 ]
 
 
@@ -46,7 +55,7 @@ def _is_internal(target: str, root_host: str) -> bool:
     host = parsed.netloc.lower()
     if host.startswith("www."):
         host = host[4:]
-    return not host or host == root_host or host.endswith("." + root_host)
+    return not host or host == root_host
 
 
 def _matches_career(text: str) -> bool:
@@ -59,22 +68,27 @@ def _should_skip(text: str) -> bool:
     return any(k in lowered for k in SKIP_KEYWORDS)
 
 
-def _candidate_selectors() -> str:
-    ignored = ",".join([f":not({sel})" for sel in IGNORE_CONTAINERS])
-    return f"a{ignored}"
+async def _inside_ignored(anchor) -> bool:
+    try:
+        return await anchor.evaluate(
+            "(el, selector) => !!el.closest(selector)", IGNORE_CONTAINERS
+        )
+    except Exception:
+        return False
 
 
 async def find_careers_link(page: Page, root_url: str, root_host: str) -> Optional[str]:
     """Locate a single careers link on the homepage following strict rules."""
 
-    selector = _candidate_selectors()
-    anchors = await page.query_selector_all(selector)
+    anchors = await page.query_selector_all("a")
     seen = set()
 
     for anchor in anchors:
         href = await anchor.get_attribute("href")
         text = (await anchor.inner_text() or "").strip()
         if not href:
+            continue
+        if await _inside_ignored(anchor):
             continue
         if _should_skip(f"{href} {text}"):
             continue

@@ -183,7 +183,7 @@ async def schema():
 @app.get("/results")
 async def results():
     state = app.state.state
-    return {"jobs": state.results(), "coverage": state.coverage()}
+    return {"jobs": state.results(), "coverage": state.coverage(), "state": state.live_state()}
 
 
 @app.get("/settings")
@@ -249,6 +249,41 @@ async def ws_logs(websocket: WebSocket):
         await state.log_broker.unregister(queue)
     except Exception:
         await state.log_broker.unregister(queue)
+
+
+@app.websocket("/ws/stream")
+async def ws_stream(websocket: WebSocket):
+    await websocket.accept()
+    state = app.state.state
+    queue = await state.event_broker.register()
+    # Send immediate snapshot + backlog
+    await websocket.send_json({"type": "state", "payload": state.live_state()})
+    for job in state.results():
+        await websocket.send_json({"type": "result", "payload": job})
+    for domain in state.coverage():
+        await websocket.send_json(
+            {
+                "type": "domain",
+                "payload": {
+                    "company": domain.get("company"),
+                    "domain": domain.get("url"),
+                    "status": domain.get("status"),
+                    "jobs": domain.get("jobs", 0),
+                    "lastScan": domain.get("last_scan"),
+                },
+            }
+        )
+    for log in state.recent_logs():
+        await websocket.send_json({"type": "log", **log})
+
+    try:
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
+    except WebSocketDisconnect:
+        await state.event_broker.unregister(queue)
+    except Exception:
+        await state.event_broker.unregister(queue)
 
 
 @app.get("/")

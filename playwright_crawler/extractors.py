@@ -1,8 +1,8 @@
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
-from playwright.async_api import Frame, Page
+from playwright.async_api import Page
 
 HUBSPOT_TITLE_KEYWORDS = [
     "hubspot",
@@ -30,6 +30,9 @@ ROLE_SELECTORS = [
     "a[href*='opening']",
     "a[href*='opportunity']",
     ".job-title",
+    ".job",
+    ".job-card",
+    ".job-card a",
     "div[class*='job'] a",
     "[data-qa='job-card']",
     "[role='listitem'] a",
@@ -92,6 +95,15 @@ ATS_ALLOWLIST = {
     "myworkdayjobs.com",
 }
 
+WIDGET_WAIT_SELECTORS = [
+    "#jobs",
+    "#jobs-list",
+    ".lever-jobs",
+    "#grnhse_app",
+    "#workable-wrapper",
+    ".ashby-embed",
+]
+
 
 def _clean_text(text: Optional[str]) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip()
@@ -105,11 +117,6 @@ def _host(url: str) -> str:
     return host
 
 
-def _is_allowed_host(target: str, root_host: str) -> bool:
-    host = _host(target)
-    return not host or host == root_host or host.endswith("." + root_host) or host in ATS_ALLOWLIST
-
-
 def _normalize_url(base_url: str, href: Optional[str]) -> Optional[str]:
     if not href:
         return None
@@ -117,6 +124,15 @@ def _normalize_url(base_url: str, href: Optional[str]) -> Optional[str]:
         return urljoin(base_url, href)
     except Exception:
         return None
+
+
+def _is_allowed_host(target: str, root_host: str) -> bool:
+    host = _host(target)
+    return (
+        not host
+        or host == root_host
+        or any(host == ats or host.endswith("." + ats) for ats in ATS_ALLOWLIST)
+    )
 
 
 def _matches_hubspot_title(title: str) -> bool:
@@ -163,13 +179,14 @@ async def _collect_listings_from_context(page: Page, base_url: str, root_host: s
     return listings
 
 
-async def _run_search_if_available(page: Page):
+async def _run_search_if_available(page: Page) -> bool:
     try:
         search_input = await page.query_selector("input[type='search'], input[name*='search']")
     except Exception:
-        return
+        search_input = None
     if not search_input:
-        return
+        return False
+
     for term in SEARCH_KEYWORDS:
         try:
             await search_input.click()
@@ -179,6 +196,16 @@ async def _run_search_if_available(page: Page):
             break
         except Exception:
             continue
+    return True
+
+
+async def _wait_for_widgets(page: Page):
+    for selector in WIDGET_WAIT_SELECTORS:
+        try:
+            await page.wait_for_selector(selector, timeout=1500)
+            return
+        except Exception:
+            continue
 
 
 async def _click_next(page: Page) -> bool:
@@ -186,7 +213,10 @@ async def _click_next(page: Page) -> bool:
         try:
             locator = page.locator(selector)
             if await locator.count() > 0:
-                await locator.first.click(timeout=1500)
+                target = locator.first
+                if await target.is_disabled():
+                    continue
+                await target.click(timeout=1500)
                 await page.wait_for_timeout(1400)
                 return True
         except Exception:
@@ -209,6 +239,8 @@ async def extract_hubspot_listings(page: Page, base_url: str, root_host: str) ->
     """Extract HubSpot-filtered role listings from a careers page (and allowed frames)."""
 
     await _run_search_if_available(page)
+    await _wait_for_widgets(page)
+
     listings: List[Dict[str, str]] = []
     seen = set()
     last_count = -1
@@ -219,15 +251,22 @@ async def extract_hubspot_listings(page: Page, base_url: str, root_host: str) ->
         current: List[Dict[str, str]] = []
         current.extend(await _collect_listings_from_context(page, base_url, root_host))
 
-        # Frames (ATS embeds)
         for frame in page.frames:
             if frame == page.main_frame:
                 continue
             frame_host = _host(frame.url)
-            if frame_host and frame_host not in ATS_ALLOWLIST and frame_host != root_host and not frame_host.endswith("." + root_host):
+            if frame_host and not (
+                frame_host == root_host
+                or frame_host.endswith("." + root_host)
+                or frame_host in ATS_ALLOWLIST
+            ):
                 continue
             try:
-                current.extend(await _collect_listings_from_context(frame, frame.url or base_url, root_host))
+                current.extend(
+                    await _collect_listings_from_context(
+                        frame, frame.url or base_url, root_host
+                    )
+                )
             except Exception:
                 continue
 
@@ -239,7 +278,6 @@ async def extract_hubspot_listings(page: Page, base_url: str, root_host: str) ->
             listings.append(entry)
 
         if len(listings) == last_count:
-            # Try pagination or scroll; if neither adds items, break.
             if await _click_next(page):
                 last_count = len(listings)
                 continue

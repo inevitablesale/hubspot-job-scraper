@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 LOG_PREFIX = {
     "start": "START domain",
     "careers": "FOUND careers page",
-    "roles": "FOUND HubSpot roles",
+    "roles": "FOUND (N) HubSpot-matching listings",
     "nav": "NAVIGATING to role page",
     "valid": "VALID ROLE CONFIRMED",
     "saved": "SAVED role",
@@ -37,9 +37,9 @@ def _is_allowed_target(url: str, root_host: str) -> bool:
     host = _host(url)
     if not host:
         return True
-    if host == root_host or host.endswith("." + root_host):
+    if host == root_host:
         return True
-    return host in ATS_ALLOWLIST
+    return any(host == ats or host.endswith("." + ats) for ats in ATS_ALLOWLIST)
 
 
 def _remote_flag(text: str) -> bool:
@@ -74,6 +74,9 @@ async def _log(state: Optional[CrawlerState], level: str, message: str):
 async def _process_role_page(context: BrowserContext, company: str, role_url: str, root_host: str, notifier, state: Optional[CrawlerState]):
     if not role_url:
         return 0
+    if is_blocked(role_url):
+        await _log(state, "INFO", f"Skipping blocked role target {role_url}")
+        return 0
     if not _is_allowed_target(role_url, root_host):
         await _log(state, "INFO", f"Skipping external role {role_url}")
         return 0
@@ -105,7 +108,7 @@ async def _process_role_page(context: BrowserContext, company: str, role_url: st
             "title": role_data.get("title") or "",
             "url": role_url,
             "location": role_data.get("location", ""),
-            "summary": role_data.get("description_html", ""),
+            "description_html": role_data.get("description_html", ""),
             "role": scored["role"],
             "score": scored["score"],
             "signals": scored.get("signals", []),
@@ -152,8 +155,9 @@ async def crawl_domain(context: BrowserContext, company: str, url: str, notifier
 
     listings = await extract_hubspot_listings(page, careers_url, root_host)
     if listings:
-        titles = ", ".join(sorted({l["title"] for l in listings}))
-        await _log(state, "INFO", f"{LOG_PREFIX['roles']}: {titles}")
+        titles = sorted({entry.get("title", "") for entry in listings if entry.get("title")})
+        titles_str = ", ".join(titles)
+        await _log(state, "INFO", f"{LOG_PREFIX['roles']}: {titles_str}")
     else:
         await _log(state, "WARNING", f"No HubSpot roles found on careers page {careers_url}")
         await page.close()

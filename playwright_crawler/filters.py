@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 REMOTE_ONLY = os.getenv("REMOTE_ONLY", "false").lower() == "true"
 ALLOW_AGENCIES = os.getenv("ALLOW_AGENCIES", "false").lower() == "true"
 
+# Noise/marketing/social domains we never want to crawl
 BLOCKED_DOMAINS = {
     "instagram.com",
     "facebook.com",
@@ -13,6 +14,7 @@ BLOCKED_DOMAINS = {
     "twitter.com",
     "x.com",
     "pinterest.com",
+    "tiktok.com",
     "zoominfo.com",
     "mailchimp.com",
     "doubleclick.net",
