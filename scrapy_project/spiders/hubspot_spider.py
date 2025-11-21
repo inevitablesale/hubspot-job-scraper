@@ -35,6 +35,7 @@ DATASET_ENV_VAR = "DOMAINS_FILE"
 DEFAULT_DATASET_FILE = (
     Path(__file__).resolve().parent.parent / "dataset_crawler-google-places_2025-11-20_21-44-01-758.json"
 )
+RENDER_SECRET_DATASET = Path("/etc/secrets/DOMAINS_FILE")
 
 
 class HubspotSpider(scrapy.Spider):
@@ -105,10 +106,9 @@ class HubspotSpider(scrapy.Spider):
         return any(h in target for h in CAREER_HINTS)
 
     def _load_companies(self):
-        dataset_path = Path(os.getenv(DATASET_ENV_VAR, DEFAULT_DATASET_FILE))
+        dataset_path = self._resolve_dataset_path()
 
-        if not dataset_path.exists():
-            self.logger.error("Dataset file not found: %s", dataset_path)
+        if not dataset_path:
             return []
 
         try:
@@ -135,3 +135,25 @@ class HubspotSpider(scrapy.Spider):
             self.logger.error("No valid companies found in %s", dataset_path)
 
         return companies
+
+    def _resolve_dataset_path(self):
+        candidates = []
+
+        env_path = os.getenv(DATASET_ENV_VAR)
+        if env_path:
+            candidates.append(Path(env_path))
+
+        if RENDER_SECRET_DATASET.exists():
+            candidates.append(RENDER_SECRET_DATASET)
+
+        candidates.append(DEFAULT_DATASET_FILE)
+
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+
+        self.logger.error(
+            "Dataset file not found. Checked: %s",
+            ", ".join(str(p) for p in candidates),
+        )
+        return None
