@@ -18,17 +18,55 @@ CAREER_HINTS = [
     "opportunities",
     "open-positions",
     "openings",
+    "apply",
+    "team",
+    "we-are-hiring",
+    "work-with-me",
 ]
 
-HUBSPOT_KEYWORDS = ["hubspot", "hub spot"]
-ROLE_KEYWORDS = [
-    "consultant",
-    "developer",
-    "engineer",
-    "specialist",
-    "architect",
-    "admin",
-    "administrator",
+HUBSPOT_TECH_KEYWORDS = [
+    "hubspot",
+    "hub spot",
+    "crm",
+    "workflows",
+    "integrations",
+    "cms hub",
+    "marketing hub",
+    "service hub",
+    "operations hub",
+    "inbound",
+    "reports",
+    "dashboards",
+    "portal",
+    "map properties",
+    "api",
+    "app",
+    "private app token",
+]
+
+CONSULTANT_INTENT = [
+    "hubspot consultant",
+    "crm consultant",
+    "revops consultant",
+    "marketing ops",
+    "solutions architect",
+    "hubspot onboarding",
+    "hubspot implementation",
+    "hubspot specialist",
+    "revops specialist",
+    "workflow automation",
+]
+
+DEVELOPER_INTENT = [
+    "hubspot developer",
+    "hubspot cms developer",
+    "hubspot theme",
+    "hubspot custom modules",
+    "hubspot serverless",
+    "hubspot api",
+    "hubspot integrations",
+    "nodejs hubspot",
+    "python hubspot api",
 ]
 
 SKIP_DOMAINS = {
@@ -41,6 +79,18 @@ SKIP_DOMAINS = {
     "x.com",
     "yelp.com",
     "youtube.com",
+    "wix.com",
+    "wixstatic.com",
+    "godaddy.com",
+    "about:blank",
+}
+
+CAREER_HOSTS = {
+    "greenhouse.io",
+    "ashbyhq.com",
+    "workable.com",
+    "bamboohr.com",
+    "lever.co",
 }
 
 DATASET_ENV_VAR = "DOMAINS_FILE"
@@ -99,11 +149,17 @@ class HubspotSpider(scrapy.Spider):
 
     def parse_career_page(self, response):
         text = response.text.lower()
-        if any(k in text for k in HUBSPOT_KEYWORDS) and any(r in text for r in ROLE_KEYWORDS):
-            yield {
-                "company": response.meta["company"],
-                "job_page": response.meta["job_page"],
-            }
+        role_match = self._evaluate_roles(text)
+        if not role_match:
+            return
+
+        yield {
+            "company": response.meta["company"],
+            "job_page": response.meta["job_page"],
+            "role": role_match["role"],
+            "score": role_match["score"],
+            "signals": role_match["signals"],
+        }
 
     def _get_host(self, url):
         netloc = urlparse(url).netloc
@@ -129,7 +185,117 @@ class HubspotSpider(scrapy.Spider):
 
     def _looks_like_career(self, url, text):
         target = url.lower() + " " + text.lower()
-        return any(h in target for h in CAREER_HINTS)
+        if any(h in target for h in CAREER_HINTS):
+            return True
+
+        host = urlparse(url).netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+
+        if any(host == ch or host.endswith("." + ch) for ch in CAREER_HOSTS):
+            return True
+
+        path = urlparse(url).path.lower()
+        hosted_signals = ["/careers", "/jobs", "/opportunities", "/open-positions", "apply"]
+        return any(sig in path for sig in hosted_signals)
+
+    def _evaluate_roles(self, text):
+        developer_score, developer_signals = self._score_developer(text)
+        consultant_score, consultant_signals = self._score_consultant(text)
+
+        choices = []
+        if developer_score >= 60:
+            choices.append({"role": "developer", "score": developer_score, "signals": developer_signals})
+        if consultant_score >= 50:
+            choices.append({"role": "consultant", "score": consultant_score, "signals": consultant_signals})
+
+        if not choices:
+            return None
+
+        return max(choices, key=lambda c: c["score"])
+
+    def _score_developer(self, text):
+        score = 0
+        signals = []
+
+        if not self._has_tech_and_intent(text, DEVELOPER_INTENT):
+            return 0, []
+
+        score, signals = self._apply_scoring_rules(
+            text,
+            [
+                (HUBSPOT_TECH_KEYWORDS, 25, "HubSpot mentioned"),
+                (["cms hub"], 25, "CMS Hub"),
+                (
+                    [
+                        "custom module",
+                        "custom modules",
+                        "theme development",
+                        "hubspot theme",
+                    ],
+                    15,
+                    "Theme/modules",
+                ),
+                (
+                    ["hubspot api", "api", "integrations", "private app"],
+                    20,
+                    "HubSpot API/Integrations",
+                ),
+                (["developer", "engineer"], 10, "Developer title"),
+            ],
+        )
+
+        return score, signals
+
+    def _score_consultant(self, text):
+        score = 0
+        signals = []
+
+        if not self._has_tech_and_intent(text, CONSULTANT_INTENT):
+            return 0, []
+
+        score, signals = self._apply_scoring_rules(
+            text,
+            [
+                (HUBSPOT_TECH_KEYWORDS, 25, "HubSpot mentioned"),
+                (
+                    ["revops", "marketing ops", "mops", "revenue operations"],
+                    20,
+                    "RevOps/Marketing Ops",
+                ),
+                (
+                    ["workflows", "automation", "implementation"],
+                    15,
+                    "Automation/Implementation",
+                ),
+                (
+                    ["crm migration", "onboarding", "data migration"],
+                    20,
+                    "CRM migration/onboarding",
+                ),
+                (
+                    ["consultant", "specialist", "solutions architect"],
+                    10,
+                    "Consultant title",
+                ),
+            ],
+        )
+
+        return score, signals
+
+    def _apply_scoring_rules(self, text, rules):
+        score = 0
+        signals = []
+        for keywords, points, label in rules:
+            if any(kw in text for kw in keywords):
+                score += points
+                signals.append(label)
+        return score, signals
+
+    def _has_tech_and_intent(self, text, intent_keywords):
+        has_tech = any(k in text for k in HUBSPOT_TECH_KEYWORDS)
+        has_intent = any(k in text for k in intent_keywords)
+        return has_tech and has_intent
 
     def _load_companies(self):
         dataset_path = self._resolve_dataset_path()
@@ -194,10 +360,11 @@ class HubspotSpider(scrapy.Spider):
 
     def _should_skip_domain(self, url: str) -> bool:
         host = urlparse(url).netloc.lower()
+        if not host:
+            return True
         if host.startswith("www."):
             host = host[4:]
         if any(host == sd or host.endswith("." + sd) for sd in SKIP_DOMAINS):
-            self.logger.info("Skipping social/blocked domain: %s", host)
             return True
         return False
 

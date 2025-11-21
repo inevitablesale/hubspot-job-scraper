@@ -5,10 +5,19 @@ A small Scrapy project that crawls company websites, looks for career pages, and
 ## What it does
 
 * Reads a JSON list of company websites from `DOMAINS_FILE` (or the Render secret mount at `/etc/secrets/DOMAINS_FILE`).
-* Visits each homepage, follows internal career-looking links, and flags pages that mention both HubSpot and target role keywords.
-* Buffers results and posts them to `https://ntfy.sh/hubspot_job_alerts` when the crawl finishes.
+* Visits each homepage, follows internal career-looking links (including common ATS hosts), and flags pages that score as HubSpot **Developer** or **Consultant** roles.
+* Buffers only new jobs (deduped via `.job_cache.json`) and posts formatted alerts to `https://ntfy.sh/hubspot_job_alerts` with optional email/SMS/Slack headers.
 * Exposes a FastAPI “control room” with live log streaming, status endpoints, and an ECharts-powered activity pulse.
-* Handles DNS failures gracefully, marks dead domains to avoid repeated errors, skips social/link-shortener detours, and throttles per-domain requests with exponential backoff retries for noisy sites.
+* Handles DNS failures gracefully, marks dead domains to avoid repeated errors, skips social/link-shortener detours (Instagram, Facebook, Yelp, Wix, etc.), and throttles per-domain requests with exponential backoff retries for noisy sites.
+
+## HubSpot-first detection
+
+The spider requires **both** HubSpot technology signals and role intent. Pages are scored and only emitted when they cross the relevant threshold.
+
+* Developer rules (threshold ≥ 60): HubSpot mentions (+25), CMS Hub (+25), custom modules/theme development (+15), HubSpot API/integrations (+20), developer/engineer title (+10).
+* Consultant rules (threshold ≥ 50): HubSpot mentions (+25), RevOps/Marketing Ops/MOPS (+20), workflows/automation/implementation (+15), CRM migration/onboarding (+20), consultant/specialist/solutions architect (+10).
+
+Career-link discovery is tightened with added keywords (apply, team, we-are-hiring, work-with-me) and recognition of hosted career systems (Greenhouse, Ashby, Workable, BambooHR, Lever) in addition to typical `/careers`/`/jobs` paths.
 
 ## Setup
 
