@@ -42,6 +42,9 @@ async def _extract_json_ld(page: Page) -> Optional[Dict]:
 async def fetch_details(context: BrowserContext, listing: Dict) -> Dict:
     url = listing.get("url")
     page = await context.new_page()
+    from server import set_current_page
+
+    set_current_page(page)
     await page.goto(url, wait_until="networkidle")
     await page.wait_for_timeout(1200)
 
