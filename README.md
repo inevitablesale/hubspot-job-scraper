@@ -55,6 +55,6 @@ Launch the lightweight FastAPI server to start crawls from the browser and strea
 uvicorn server:app --host 0.0.0.0 --port 8000
 ```
 
-Visit `http://localhost:8000` and click **Start Crawl** to trigger the spider. The page uses Server-Sent Events to show the live log and expose a `/status` endpoint so you can check whether a crawl is running.
+Visit `http://localhost:8000` and click **Start Crawl** to trigger the spider. The control room streams the live log with color-coded warnings/errors, surfaces run metadata (run id, start time, last event), and keeps a running line count while `/status` reports whether the crawl is active.
 
 > Render note: the crawler does not bind a port; deploy it as a Background Worker (or use the FastAPI server/uvicorn command above if you need a Web Service).
