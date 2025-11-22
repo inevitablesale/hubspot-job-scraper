@@ -6,7 +6,7 @@ is being extracted as jobs.
 """
 
 import unittest
-from extractors import MultiLayerExtractor, AnchorExtractor, HeadingExtractor
+from extractors import MultiLayerExtractor, AnchorExtractor, HeadingExtractor, TITLE_HINTS
 
 
 class TestFalsePositives(unittest.TestCase):
@@ -90,7 +90,8 @@ class TestFalsePositives(unittest.TestCase):
             title_words = job['title'].split()
             # If it's just 2-3 generic words, it's likely a category, not a job
             if len(title_words) <= 3:
-                has_role_word = any(word.lower() in ['engineer', 'developer', 'manager', 'specialist', 'analyst', 'consultant', 'architect'] for word in title_words)
+                # Use the same TITLE_HINTS list to check for role words
+                has_role_word = any(word.lower() in TITLE_HINTS for word in title_words)
                 if not has_role_word:
                     self.fail(f"Category '{job['title']}' should not be extracted as a job")
 

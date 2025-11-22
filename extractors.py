@@ -57,32 +57,33 @@ GENERIC_KEYWORDS = [
 ]
 
 # Patterns that indicate this is NOT a job title
+# Pre-compiled for performance since they're checked frequently
 FALSE_POSITIVE_PATTERNS = [
     # Questions
-    r'^what\s+(is|are)',
-    r'^how\s+to',
-    r'^why\s+',
+    re.compile(r'^what\s+(is|are)', re.IGNORECASE),
+    re.compile(r'^how\s+to', re.IGNORECASE),
+    re.compile(r'^why\s+', re.IGNORECASE),
     # Social media / podcasts
-    r'youtube',
-    r'spotify',
-    r'podcast',
-    r'listen\s+on',
-    r'watch\s+on',
+    re.compile(r'youtube', re.IGNORECASE),
+    re.compile(r'spotify', re.IGNORECASE),
+    re.compile(r'podcast', re.IGNORECASE),
+    re.compile(r'listen\s+on', re.IGNORECASE),
+    re.compile(r'watch\s+on', re.IGNORECASE),
     # Generic CTAs
-    r'^apply\s+(now|today)$',
-    r'^join\s+(us|our\s+team)$',
-    r'^view\s+',
-    r'^see\s+(all|our)',
-    r'^explore\s+',
-    r'^learn\s+more$',
+    re.compile(r'^apply\s+(now|today)$', re.IGNORECASE),
+    re.compile(r'^join\s+(us|our\s+team)$', re.IGNORECASE),
+    re.compile(r'^view\s+', re.IGNORECASE),
+    re.compile(r'^see\s+(all|our)', re.IGNORECASE),
+    re.compile(r'^explore\s+', re.IGNORECASE),
+    re.compile(r'^learn\s+more$', re.IGNORECASE),
     # Blog/resources
-    r'^episode\s+\d+',
-    r'^chapter\s+\d+',
+    re.compile(r'^episode\s+\d+', re.IGNORECASE),
+    re.compile(r'^chapter\s+\d+', re.IGNORECASE),
     # Generic navigation
-    r'^about\s+(us)?$',
-    r'^contact\s+(us)?$',
-    r'^our\s+(team|services)',
-    r'^meet\s+',
+    re.compile(r'^about\s+(us)?$', re.IGNORECASE),
+    re.compile(r'^contact\s+(us)?$', re.IGNORECASE),
+    re.compile(r'^our\s+(team|services)', re.IGNORECASE),
+    re.compile(r'^meet\s+', re.IGNORECASE),
 ]
 
 # Headings that indicate job sections
@@ -143,9 +144,9 @@ class JobExtractor:
             
         text_lower = text.lower().strip()
         
-        # Filter out false positives
+        # Filter out false positives using pre-compiled patterns
         for pattern in FALSE_POSITIVE_PATTERNS:
-            if re.search(pattern, text_lower, re.IGNORECASE):
+            if pattern.search(text_lower):
                 return False
         
         # Check for role-specific keywords using word boundaries
