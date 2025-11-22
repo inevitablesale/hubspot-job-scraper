@@ -20,6 +20,12 @@ Render expects a build command. The safest option is to leave it as the default:
 ./postinstall.sh
 ```
 
+If you want Render to read the commands from code instead of the dashboard, drop this repo's `render.yaml` into your service; it sets the build command to:
+
+```
+export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 && pip install --no-cache-dir -r requirements.txt
+```
+
 If you **must** inline the install, either set the variable as a prefix or add `&&` between commands:
 
 ```bash
