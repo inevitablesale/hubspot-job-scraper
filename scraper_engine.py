@@ -468,10 +468,9 @@ class JobScraper:
             self.incremental_tracker.add_job(company_name, job_payload)
             jobs_added += 1
             
-            # Enhanced logging per requirements
+            # Enhanced logging per requirements (single line for better log parsing)
             self.logger.info(
-                f"[JOB] Title: {job_payload['title']}\n"
-                f"     Source: {job_payload['extraction_source']}"
+                f"[JOB] Title: {job_payload['title']} | Source: {job_payload['extraction_source']}"
             )
             
             self.logger.debug(

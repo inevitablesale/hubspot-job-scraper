@@ -245,10 +245,13 @@ class CareerPageDetector:
                 
             # Only process if it has career indicators
             if has_career_keyword:
-                # Check for invalid paths
+                # Check for invalid paths (exact match or proper path segment)
                 parsed_url = urlparse(full_url)
                 path = parsed_url.path.lower()
-                is_invalid = any(path.startswith(invalid) for invalid in INVALID_CAREER_PATHS)
+                is_invalid = any(
+                    path == invalid or path.startswith(invalid + "/") 
+                    for invalid in INVALID_CAREER_PATHS
+                )
                 
                 if is_invalid:
                     self.logger.debug("[SKIP] Invalid path pattern: %s", full_url)
