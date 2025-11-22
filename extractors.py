@@ -24,20 +24,27 @@ MIN_JOB_TITLE_LENGTH = 5
 
 # Keywords that suggest a link/button contains job titles or job pages
 # These are ROLE-SPECIFIC keywords that indicate actual job titles
+# From problem statement PART C - Valid job titles match patterns
 TITLE_HINTS = [
-    "developer",
-    "engineer",
+    "strategist",
     "consultant",
-    "architect",
-    "specialist",
-    "manager",
-    "analyst",
+    "developer",
     "designer",
-    "coordinator",
+    "manager",
     "director",
-    "representative",
-    "associate",
+    "specialist",
+    "architect",
+    "administrator",
+    "coordinator",
+    "engineer",
     "lead",
+    "intern",
+    "analyst",
+    "supervisor",
+    "principal",
+    "assistant",
+    "associate",
+    "representative",
     "position",
     "role",
     "opening",
@@ -50,17 +57,24 @@ ROLE_PATTERNS = [re.compile(r'\b' + re.escape(hint) + r'\b', re.IGNORECASE) for 
 
 # Patterns that indicate this is NOT a job title
 # Pre-compiled for performance since they're checked frequently
+# From problem statement PART C - Negative keywords and blog patterns
 FALSE_POSITIVE_PATTERNS = [
-    # Questions
+    # Questions and blog titles
     re.compile(r'^what\s+(is|are)', re.IGNORECASE),
     re.compile(r'^how\s+to', re.IGNORECASE),
     re.compile(r'^why\s+', re.IGNORECASE),
+    re.compile(r'\bthe\b.*\b(guide|tips|strategy)\b', re.IGNORECASE),
+    re.compile(r'^guest\s+post:', re.IGNORECASE),
+    re.compile(r'\bcase\s+study\b', re.IGNORECASE),
+    re.compile(r'\bwebinar\b', re.IGNORECASE),
+    
     # Social media / podcasts
     re.compile(r'youtube', re.IGNORECASE),
     re.compile(r'spotify', re.IGNORECASE),
     re.compile(r'podcast', re.IGNORECASE),
     re.compile(r'listen\s+on', re.IGNORECASE),
     re.compile(r'watch\s+on', re.IGNORECASE),
+    
     # Generic CTAs
     re.compile(r'^apply\s+(now|today)$', re.IGNORECASE),
     re.compile(r'^join\s+(us|our\s+team)$', re.IGNORECASE),
@@ -68,9 +82,14 @@ FALSE_POSITIVE_PATTERNS = [
     re.compile(r'^see\s+(all|our)', re.IGNORECASE),
     re.compile(r'^explore\s+', re.IGNORECASE),
     re.compile(r'^learn\s+more$', re.IGNORECASE),
-    # Blog/resources
+    
+    # Blog/resources - enhanced patterns
     re.compile(r'^episode\s+\d+', re.IGNORECASE),
     re.compile(r'^chapter\s+\d+', re.IGNORECASE),
+    re.compile(r'\bby\s+[A-Z][a-z]+\s+[A-Z][a-z]+', re.IGNORECASE),  # "By John Doe"
+    re.compile(r'\d+\s+min\s+read', re.IGNORECASE),  # "5 min read"
+    re.compile(r'\b(20\d{2}|19\d{2})\b'),  # Years (YYYY)
+    
     # Generic navigation
     re.compile(r'^about\s+(us)?$', re.IGNORECASE),
     re.compile(r'^contact\s+(us)?$', re.IGNORECASE),
@@ -130,7 +149,14 @@ class JobExtractor:
         return text
 
     def _is_job_like(self, text: str) -> bool:
-        """Check if text looks like a job title or job-related content."""
+        """
+        Check if text looks like a job title or job-related content.
+        
+        From problem statement PART D - Job safety filter:
+        - Must have title (string)
+        - Must NOT match blog patterns
+        - Titles with > 6 words without "apply" are rejected as blog posts
+        """
         if not text or len(text.strip()) < MIN_JOB_TITLE_LENGTH:
             return False
             
@@ -140,6 +166,13 @@ class JobExtractor:
         for pattern in FALSE_POSITIVE_PATTERNS:
             if pattern.search(text_lower):
                 return False
+        
+        # From problem statement: reject long titles without "apply" (likely blog posts)
+        # "if len(title.split()) > 6 and not 'apply' in page_text.lower(): reject"
+        word_count = len(text.split())
+        if word_count > 6 and "apply" not in text_lower:
+            logger.debug("Rejecting long title without 'apply': %s", text)
+            return False
         
         # Check for role-specific keywords using pre-compiled patterns
         # Word boundaries ensure "engineer" matches "engineer" but not "engineering"
@@ -158,6 +191,40 @@ class JobExtractor:
         if key in self.seen_jobs:
             return False
         self.seen_jobs.add(key)
+        return True
+    
+    def _is_valid_job(self, job_data: Dict[str, str]) -> bool:
+        """
+        Validate job data according to safety filters from problem statement PART D.
+        
+        Jobs MUST have:
+        - title (string)
+        - description (string, 20+ characters) OR URL
+        - must NOT match blog patterns
+        - must NOT match "team member profile" pages
+        - must NOT match events/webinars pages
+        
+        Returns:
+            True if job is valid, False otherwise
+        """
+        # Validate title exists and is a string
+        title = job_data.get('title')
+        if not title or not isinstance(title, str):
+            logger.debug("Job rejected: missing or invalid title")
+            return False
+        
+        # Get description and URL
+        description = job_data.get('summary', '') or job_data.get('description', '')
+        url = job_data.get('url')
+        
+        # Job must have either description (20+ chars) OR URL
+        has_description = description and isinstance(description, str) and len(description.strip()) >= 20
+        has_url = url and isinstance(url, str) and len(url.strip()) > 0
+        
+        if not has_description and not has_url:
+            logger.debug("Job rejected: no description (20+ chars) or URL - title: %s", title)
+            return False
+        
         return True
 
 
@@ -187,7 +254,8 @@ class JsonLdExtractor(JobExtractor):
                     type_value = item.get('@type', '')
                     if type_value == 'JobPosting' or (isinstance(type_value, list) and 'JobPosting' in type_value):
                         job = self._extract_job_posting(item)
-                        if job and self._dedupe_job(job['title'], job.get('url')):
+                        # Apply safety validation and deduplication
+                        if job and self._is_valid_job(job) and self._dedupe_job(job['title'], job.get('url')):
                             jobs.append(job)
 
             except (json.JSONDecodeError, AttributeError, TypeError) as e:
@@ -248,12 +316,14 @@ class AnchorExtractor(JobExtractor):
             # Check if this looks like a job
             if self._is_job_like(combined_text) and text:
                 url = self._normalize_url(href)
-                if url and self._dedupe_job(text, url):
-                    jobs.append({
-                        'title': text,
-                        'url': url,
-                        'summary': '',
-                    })
+                job_data = {
+                    'title': text,
+                    'url': url,
+                    'summary': '',
+                }
+                # Apply safety validation and deduplication
+                if self._is_valid_job(job_data) and self._dedupe_job(text, url):
+                    jobs.append(job_data)
 
         logger.debug("Anchor extractor found %d jobs", len(jobs))
         return jobs
@@ -286,12 +356,14 @@ class ButtonExtractor(JobExtractor):
             # Check if this looks like a job
             if self._is_job_like(text) and text:
                 # Note: URL might be None for modal-based jobs
-                if self._dedupe_job(text, url):
-                    jobs.append({
-                        'title': text,
-                        'url': self._normalize_url(url) if url else None,
-                        'summary': '',
-                    })
+                job_data = {
+                    'title': text,
+                    'url': self._normalize_url(url) if url else None,
+                    'summary': '',
+                }
+                # Apply safety validation and deduplication
+                if self._is_valid_job(job_data) and self._dedupe_job(text, url):
+                    jobs.append(job_data)
 
         logger.debug("Button extractor found %d jobs", len(jobs))
         return jobs
@@ -331,14 +403,16 @@ class SectionExtractor(JobExtractor):
             cards = parent.find_all(class_=re.compile(card_class, re.I))
             for card in cards:
                 job = self._extract_from_card(card)
-                if job and self._dedupe_job(job['title'], job.get('url')):
+                # Apply safety validation and deduplication
+                if job and self._is_valid_job(job) and self._dedupe_job(job['title'], job.get('url')):
                     jobs.append(job)
 
         # Also check for list items
         for ul_ol in parent.find_all(['ul', 'ol']):
             for li in ul_ol.find_all('li'):
                 job = self._extract_from_card(li)
-                if job and self._dedupe_job(job['title'], job.get('url')):
+                # Apply safety validation and deduplication
+                if job and self._is_valid_job(job) and self._dedupe_job(job['title'], job.get('url')):
                     jobs.append(job)
 
         return jobs
@@ -406,12 +480,14 @@ class HeadingExtractor(JobExtractor):
                     if link:
                         url = self._normalize_url(link.get('href'))
 
-                    if self._dedupe_job(text, url):
-                        jobs.append({
-                            'title': text,
-                            'url': url,
-                            'summary': '',
-                        })
+                    job_data = {
+                        'title': text,
+                        'url': url,
+                        'summary': '',
+                    }
+                    # Apply safety validation and deduplication
+                    if self._is_valid_job(job_data) and self._dedupe_job(text, url):
+                        jobs.append(job_data)
 
         logger.debug("Heading extractor found %d jobs", len(jobs))
         return jobs

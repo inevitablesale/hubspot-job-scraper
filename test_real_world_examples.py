@@ -76,8 +76,8 @@ class TestRealWorldExamples(unittest.TestCase):
         <body>
             <h3>Marketing & Creative</h3>
             <h3>Sales & Revenue</h3>
-            <h3>Senior Marketing Manager</h3>
-            <h3>Sales Development Representative</h3>
+            <h3><a href="/jobs/marketing-manager">Senior Marketing Manager</a></h3>
+            <h3><a href="/jobs/sdr">Sales Development Representative</a></h3>
         </body>
         </html>
         '''
@@ -87,11 +87,11 @@ class TestRealWorldExamples(unittest.TestCase):
         
         titles = [job['title'] for job in jobs]
         
-        # Department categories should not be extracted
+        # Department categories should not be extracted (no links, no descriptions)
         self.assertNotIn("Marketing & Creative", titles)
         self.assertNotIn("Sales & Revenue", titles)
         
-        # Actual job titles should be extracted
+        # Actual job titles with links should be extracted
         self.assertIn("Senior Marketing Manager", titles)
         self.assertIn("Sales Development Representative", titles)
 

@@ -14,26 +14,36 @@ from blacklist import DomainBlacklist
 logger = logging.getLogger(__name__)
 
 # URL path hints that suggest a career page (from problem statement)
+# Organized by tier from domain research
 CAREER_PATH_HINTS = [
+    # Tier 1 - Standard, reliable
     "career",
     "careers",
     "jobs",
     "job",
-    "job-openings",
-    "join-our-team",
-    "join-us",
-    "join",
+    "team",  # used by ~20% agencies
+    "about/careers",
+    "about-us/careers",
     "work-with-us",
-    "work-with",
-    "work-for-us",
+    "join-us",
+    
+    # Tier 2 - Marketing agency specials
+    "join-the-team",
+    "our-team/careers",
     "opportunities",
     "open-positions",
+    "hiring",
+    
+    # Additional patterns
+    "job-openings",
+    "join-our-team",
+    "join",
+    "work-with",
+    "work-for-us",
     "open-roles",
     "openings",
     "apply",
-    "team",
     "we-are-hiring",
-    "hiring",
     "positions",
     "employment",
     "work-here",
@@ -79,6 +89,7 @@ CAREER_LINK_TEXT_PATTERNS = [
 ]
 
 # Known ATS (Applicant Tracking System) domains
+# From problem statement - Bucket D: Embedded ATS
 ATS_DOMAINS = [
     "greenhouse.io",
     "ashbyhq.com",
@@ -91,6 +102,10 @@ ATS_DOMAINS = [
     "breezy.hr",
     "applytojob.com",
     "icims.com",
+    "jazzhr.com",
+    "teamtailor.com",
+    "zoho.com",  # Zoho Recruit
+    "breezyhr.com",
 ]
 
 

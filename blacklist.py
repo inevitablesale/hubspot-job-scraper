@@ -96,7 +96,7 @@ BLACKLISTED_DOMAINS = {
     "threads.net",
     "snapchat.com",
     
-    # Publishing Platforms
+    # Publishing Platforms (from problem statement)
     "medium.com",
     "substack.com",
     "blogger.com",
@@ -104,6 +104,7 @@ BLACKLISTED_DOMAINS = {
     "wix.com",
     "wixstatic.com",
     "squarespace.com",
+    "vimeo.com",
     
     # HubSpot Ecosystem (from problem statement - subdomains automatically blocked)
     "hubspot.com",
@@ -115,6 +116,7 @@ BLACKLISTED_DOMAINS = {
     "figma.com",
     "notion.site",
     "eventbrite.com",
+    "mailchimp.com",
     "intercom.help",
     "zendesk.com",
     
