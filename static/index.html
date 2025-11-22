@@ -349,14 +349,22 @@
                 const data = await response.json();
                 
                 if (data.jobs && data.jobs.length > 0) {
-                    jobsContainer.innerHTML = data.jobs.slice(0, 20).map(job => `
-                        <div class="mb-4 p-3 bg-slate-800/40 rounded-lg border border-gray-700 hover:border-indigo-500/50 transition-colors">
-                            <p class="font-semibold text-sm text-white mb-1">${escapeHtml(job.title)}</p>
-                            <p class="text-xs text-gray-400 mb-1">${escapeHtml(job.company)}</p>
-                            <p class="text-xs text-indigo-400">${escapeHtml(job.location || 'Remote')}</p>
-                            ${job.url ? `<a href="${escapeHtml(job.url)}" target="_blank" class="text-xs text-cyan-400 hover:underline">View posting →</a>` : ''}
-                        </div>
-                    `).join('');
+                    jobsContainer.innerHTML = data.jobs.slice(0, 20).map(job => {
+                        // Sanitize and validate URL
+                        let urlHtml = '';
+                        if (job.url && isValidUrl(job.url)) {
+                            urlHtml = `<a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer" class="text-xs text-cyan-400 hover:underline">View posting →</a>`;
+                        }
+                        
+                        return `
+                            <div class="mb-4 p-3 bg-slate-800/40 rounded-lg border border-gray-700 hover:border-indigo-500/50 transition-colors">
+                                <p class="font-semibold text-sm text-white mb-1">${escapeHtml(job.title)}</p>
+                                <p class="text-xs text-gray-400 mb-1">${escapeHtml(job.company)}</p>
+                                <p class="text-xs text-indigo-400">${escapeHtml(job.location || 'Remote')}</p>
+                                ${urlHtml}
+                            </div>
+                        `;
+                    }).join('');
                 } else {
                     jobsContainer.innerHTML = '<div class="text-gray-500 text-sm">No jobs yet</div>';
                 }
@@ -404,11 +412,21 @@
             autoScroll = isAtBottom;
         });
 
-        // Utility
+        // Utility functions
         function escapeHtml(text) {
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+        
+        function isValidUrl(url) {
+            try {
+                const parsed = new URL(url);
+                // Only allow http and https protocols
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            } catch {
+                return false;
+            }
         }
 
         // Initial load and polling

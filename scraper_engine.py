@@ -37,8 +37,9 @@ from extraction_utils import (
     RateLimiter,
     RobotsTxtChecker,
 )
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Domains to skip (social media, link shorteners, etc.)
 SKIP_DOMAINS = {
