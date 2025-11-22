@@ -9,6 +9,8 @@ import re
 from typing import Optional
 from urllib.parse import urlparse
 
+from blacklist import DomainBlacklist
+
 logger = logging.getLogger(__name__)
 
 # URL path hints that suggest a career page
@@ -75,6 +77,7 @@ class CareerPageDetector:
 
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.domain_blacklist = DomainBlacklist()
 
     def is_career_page(self, url: str, html_content: Optional[str] = None) -> bool:
         """
@@ -147,6 +150,13 @@ class CareerPageDetector:
     def get_career_links(self, html_content: str, base_url: str) -> list:
         """
         Extract links from a page that might lead to career pages.
+        
+        Filters out blacklisted domains to avoid following links to:
+        - Social media platforms
+        - Publishing platforms
+        - HubSpot ecosystem domains
+        - Analytics/tracking domains
+        - Other irrelevant external sites
 
         Args:
             html_content: HTML content to analyze
@@ -178,7 +188,11 @@ class CareerPageDetector:
                 
                 # Skip javascript and mailto links
                 if not full_url.startswith(('javascript:', 'mailto:', '#')):
-                    career_links.append(full_url)
+                    # Filter out blacklisted domains
+                    if not self.domain_blacklist.is_blacklisted_domain(full_url):
+                        career_links.append(full_url)
+                    else:
+                        self.logger.debug("Filtered blacklisted career link: %s", full_url)
 
         self.logger.debug("Found %d potential career links", len(career_links))
         return career_links

@@ -37,11 +37,13 @@ from extraction_utils import (
     RateLimiter,
     RobotsTxtChecker,
 )
+from blacklist import DomainBlacklist
 from logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Domains to skip (social media, link shorteners, etc.)
+# Legacy SKIP_DOMAINS - kept for backwards compatibility
+# The comprehensive blacklist is now in blacklist.py
 SKIP_DOMAINS = {
     "instagram.com",
     "facebook.com",
@@ -87,6 +89,7 @@ class JobScraper:
         )
         self.incremental_tracker = IncrementalTracker(JOB_TRACKING_CACHE)
         self.health_analyzer = CompanyHealthAnalyzer()
+        self.domain_blacklist = DomainBlacklist()
         
         self.browser: Optional[Browser] = None
         self.visited_urls: Set[str] = set()
@@ -600,13 +603,29 @@ class JobScraper:
             return None
 
     def _should_skip_domain(self, url: str) -> bool:
-        """Check if a domain should be skipped."""
+        """
+        Check if a domain should be skipped.
+        
+        Uses comprehensive blacklist from blacklist.py which includes:
+        - Social media platforms
+        - Publishing platforms
+        - HubSpot ecosystem domains
+        - Analytics/tracking domains
+        - Unrelated major domains
+        - Legacy SKIP_DOMAINS for backwards compatibility
+        """
+        # Check comprehensive blacklist
+        if self.domain_blacklist.is_blacklisted_domain(url):
+            return True
+        
+        # Also check legacy SKIP_DOMAINS for backwards compatibility
         try:
             host = urlparse(url).netloc.lower()
             if host.startswith('www.'):
                 host = host[4:]
 
             return any(host == sd or host.endswith('.' + sd) for sd in SKIP_DOMAINS)
+
 
         except Exception:
             return True
