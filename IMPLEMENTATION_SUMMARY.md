@@ -104,7 +104,7 @@ All requirements from the problem statement have been successfully implemented.
 
 ### Dependencies
 ```
-playwright>=1.40.0
+playwright==1.48.0
 beautifulsoup4>=4.12.0
 lxml>=4.9.0
 aiohttp>=3.9.0
