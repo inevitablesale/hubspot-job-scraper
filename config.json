@@ -1,0 +1,17 @@
+{
+  "dark_mode_default": "light",
+  "max_pages_per_domain": 20,
+  "max_depth": 5,
+  "blacklist_domains": [
+    "spam.com"
+  ],
+  "allowed_categories": [
+    "Tech",
+    "Finance"
+  ],
+  "role_filters": [
+    "engineer",
+    "developer"
+  ],
+  "remote_only": true
+}
