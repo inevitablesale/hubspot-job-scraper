@@ -6,3 +6,5 @@ venv/
 env/
 .DS_Store
 .idea/
+test_domains.json
+*.log

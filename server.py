@@ -50,9 +50,8 @@ async def trigger_run():
     app.state.last_event_at = None
 
     env = os.environ.copy()
-    env.setdefault("SCRAPY_SETTINGS_MODULE", "scrapy_project.settings")
     proc = subprocess.Popen(
-        ["python", "main.py"],
+        ["python", "run_spider.py"],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
