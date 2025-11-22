@@ -20,6 +20,7 @@ from bs4 import BeautifulSoup, Tag
 logger = logging.getLogger(__name__)
 
 # Keywords that suggest a link/button contains job titles or job pages
+# These are ROLE-SPECIFIC keywords that indicate actual job titles
 TITLE_HINTS = [
     "developer",
     "engineer",
@@ -29,16 +30,53 @@ TITLE_HINTS = [
     "manager",
     "analyst",
     "designer",
-    "product",
+    "coordinator",
+    "director",
+    "position",
+    "role",
+    "opening",
+    "opportunity",
+]
+
+# Generic industry/department words that need additional validation
+GENERIC_KEYWORDS = [
     "marketing",
     "sales",
     "support",
-    "position",
-    "role",
-    "job",
-    "apply",
-    "opening",
-    "opportunity",
+    "product",
+    "engineering",
+    "design",
+    "creative",
+    "revenue",
+]
+
+# Patterns that indicate this is NOT a job title
+FALSE_POSITIVE_PATTERNS = [
+    # Questions
+    r'^what\s+(is|are)',
+    r'^how\s+to',
+    r'^why\s+',
+    # Social media / podcasts
+    r'youtube',
+    r'spotify',
+    r'podcast',
+    r'listen\s+on',
+    r'watch\s+on',
+    # Generic CTAs
+    r'^apply\s+(now|today)$',
+    r'^join\s+(us|our\s+team)$',
+    r'^view\s+',
+    r'^see\s+(all|our)',
+    r'^explore\s+',
+    r'^learn\s+more$',
+    # Blog/resources
+    r'^episode\s+\d+',
+    r'^chapter\s+\d+',
+    # Generic navigation
+    r'^about\s+(us)?$',
+    r'^contact\s+(us)?$',
+    r'^our\s+(team|services)',
+    r'^meet\s+',
 ]
 
 # Headings that indicate job sections
@@ -94,8 +132,32 @@ class JobExtractor:
 
     def _is_job_like(self, text: str) -> bool:
         """Check if text looks like a job title or job-related content."""
-        text_lower = text.lower()
-        return any(hint in text_lower for hint in TITLE_HINTS)
+        if not text or len(text.strip()) < 3:
+            return False
+            
+        text_lower = text.lower().strip()
+        
+        # Filter out false positives
+        for pattern in FALSE_POSITIVE_PATTERNS:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                return False
+        
+        # Check for role-specific keywords using word boundaries
+        # This prevents "engineering" from matching "engineer"
+        has_role_keyword = False
+        for hint in TITLE_HINTS:
+            # Use word boundary to ensure exact word match
+            if re.search(r'\b' + re.escape(hint) + r'\b', text_lower):
+                has_role_keyword = True
+                break
+        
+        # If it has a role keyword, it's likely a job
+        if has_role_keyword:
+            return True
+        
+        # For generic keywords alone (without role keywords), reject
+        # These are typically department names or categories, not job titles
+        return False
 
     def _dedupe_job(self, title: str, url: Optional[str]) -> bool:
         """
@@ -186,6 +248,10 @@ class AnchorExtractor(JobExtractor):
             href = anchor.get('href')
             title_attr = anchor.get('title', '')
 
+            # Skip if text is too short to be a meaningful job title
+            if len(text) < 5:
+                continue
+
             # Combine text sources
             combined_text = f"{text} {title_attr}".lower()
 
@@ -213,6 +279,11 @@ class ButtonExtractor(JobExtractor):
 
         for button in soup.find_all('button'):
             text = self._clean_text(button.get_text())
+            
+            # Skip if text is too short to be a meaningful job title
+            if len(text) < 5:
+                continue
+            
             data_url = button.get('data-url') or button.get('data-href') or button.get('onclick', '')
 
             # Extract URL from onclick handlers
@@ -329,6 +400,10 @@ class HeadingExtractor(JobExtractor):
         for heading_tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
             for heading in soup.find_all(heading_tag):
                 text = self._clean_text(heading.get_text())
+
+                # Skip if text is too short to be a meaningful job title
+                if len(text) < 5:
+                    continue
 
                 # Check if this looks like a job title
                 if self._is_job_like(text) and text:
