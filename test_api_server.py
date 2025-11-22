@@ -99,6 +99,38 @@ def test_stop_crawl_when_not_running():
     assert data["reason"] == "not_running"
 
 
+def test_pause_crawl():
+    """Test pausing a crawl."""
+    client = TestClient(app)
+    
+    # Set crawler to running
+    crawler_state._state = "running"
+    crawler_state._pause_requested = False
+    
+    response = client.post("/api/crawl/pause")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is True
+    assert crawler_state._pause_requested is True
+
+
+def test_resume_crawl():
+    """Test resuming a crawl."""
+    client = TestClient(app)
+    
+    # Set crawler to running and paused
+    crawler_state._state = "running"
+    crawler_state._pause_requested = True
+    
+    response = client.post("/api/crawl/resume")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is True
+    assert crawler_state._pause_requested is False
+
+
 def test_get_logs():
     """Test getting logs."""
     client = TestClient(app)

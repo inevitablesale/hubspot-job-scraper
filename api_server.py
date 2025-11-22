@@ -134,6 +134,60 @@ async def stop_crawl():
     )
 
 
+@app.post("/api/crawl/pause", response_model=StartCrawlResponse)
+async def pause_crawl():
+    """
+    Request the crawler to pause.
+    
+    The crawler will pause after finishing the current domain.
+    """
+    crawler_state.request_pause()
+    
+    logger.info("Crawl pause requested via API")
+    
+    # Emit pause event
+    await events_bus.publish(CrawlEvent(
+        id=f"evt_{datetime.utcnow().timestamp()}",
+        ts=datetime.utcnow(),
+        level="info",
+        type="log",
+        message="Crawl pause requested",
+        metadata={"triggered_by": "api"}
+    ))
+    
+    return StartCrawlResponse(
+        ok=True,
+        message="Pause requested"
+    )
+
+
+@app.post("/api/crawl/resume", response_model=StartCrawlResponse)
+async def resume_crawl():
+    """
+    Request the crawler to resume.
+    
+    The crawler will resume from the paused state.
+    """
+    crawler_state.request_resume()
+    
+    logger.info("Crawl resume requested via API")
+    
+    # Emit resume event
+    await events_bus.publish(CrawlEvent(
+        id=f"evt_{datetime.utcnow().timestamp()}",
+        ts=datetime.utcnow(),
+        level="info",
+        type="log",
+        message="Crawl resume requested",
+        metadata={"triggered_by": "api"}
+    ))
+    
+    return StartCrawlResponse(
+        ok=True,
+        message="Resume requested"
+    )
+
+
 @app.get("/api/crawl/status", response_model=CrawlSummary)
 async def crawl_status():
     """

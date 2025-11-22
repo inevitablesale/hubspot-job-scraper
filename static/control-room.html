@@ -741,9 +741,17 @@
                                 <i data-lucide="play"></i>
                                 Start Crawl
                             </button>
-                            <button class="btn btn-secondary" onclick="navigateTo('control-room')">
-                                <i data-lucide="radio"></i>
-                                View Control Room
+                            <button class="btn btn-secondary" id="dashboard-pause-btn">
+                                <i data-lucide="pause"></i>
+                                Pause
+                            </button>
+                            <button class="btn btn-secondary" id="dashboard-resume-btn">
+                                <i data-lucide="play-circle"></i>
+                                Resume
+                            </button>
+                            <button class="btn btn-danger" id="dashboard-stop-btn">
+                                <i data-lucide="square"></i>
+                                Stop
                             </button>
                         </div>
                     </div>
@@ -1060,7 +1068,7 @@
         // API calls
         async function fetchStatus() {
             try {
-                const response = await fetch('/status');
+                const response = await fetch('/api/system/summary');
                 const data = await response.json();
                 updateDashboard(data);
                 return data;
@@ -1071,9 +1079,9 @@
         
         async function fetchLogs() {
             try {
-                const response = await fetch('/logs?lines=100');
+                const response = await fetch('/api/logs?limit=100');
                 const data = await response.json();
-                updateLogs(data.logs);
+                updateLogs(data);
             } catch (error) {
                 console.error('Failed to fetch logs:', error);
             }
@@ -1081,9 +1089,9 @@
         
         async function fetchJobs() {
             try {
-                const response = await fetch('/jobs');
+                const response = await fetch('/api/jobs');
                 const data = await response.json();
-                state.jobs = data.jobs;
+                state.jobs = data;
                 updateJobsTable();
             } catch (error) {
                 console.error('Failed to fetch jobs:', error);
@@ -1092,7 +1100,7 @@
         
         async function startCrawl(config = {}) {
             try {
-                const response = await fetch('/start', {
+                const response = await fetch('/api/crawl/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(config)
@@ -1103,7 +1111,64 @@
                     fetchStatus();
                 } else {
                     const error = await response.json();
-                    showToast('Failed to Start', error.detail || 'Unknown error', 'error');
+                    showToast('Failed to Start', error.detail || error.message || 'Unknown error', 'error');
+                }
+            } catch (error) {
+                showToast('Network Error', 'Failed to connect to the server', 'error');
+            }
+        }
+        
+        async function pauseCrawl() {
+            try {
+                const response = await fetch('/api/crawl/pause', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    showToast('Crawl Paused', 'The crawl has been paused', 'success');
+                    fetchStatus();
+                } else {
+                    const error = await response.json();
+                    showToast('Failed to Pause', error.detail || error.message || 'Unknown error', 'error');
+                }
+            } catch (error) {
+                showToast('Network Error', 'Failed to connect to the server', 'error');
+            }
+        }
+        
+        async function resumeCrawl() {
+            try {
+                const response = await fetch('/api/crawl/resume', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    showToast('Crawl Resumed', 'The crawl has been resumed', 'success');
+                    fetchStatus();
+                } else {
+                    const error = await response.json();
+                    showToast('Failed to Resume', error.detail || error.message || 'Unknown error', 'error');
+                }
+            } catch (error) {
+                showToast('Network Error', 'Failed to connect to the server', 'error');
+            }
+        }
+        
+        async function stopCrawl() {
+            try {
+                const response = await fetch('/api/crawl/stop', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                
+                if (response.ok) {
+                    showToast('Crawl Stopped', 'The crawl has been stopped', 'warning');
+                    fetchStatus();
+                } else {
+                    const error = await response.json();
+                    showToast('Failed to Stop', error.detail || error.message || 'Unknown error', 'error');
                 }
             } catch (error) {
                 showToast('Network Error', 'Failed to connect to the server', 'error');
@@ -1127,8 +1192,14 @@
             document.getElementById('dashboard-domains').textContent = data.domains_total || '—';
             document.getElementById('dashboard-jobs').textContent = data.jobs_found || '—';
             
-            // Update button state
-            document.getElementById('dashboard-start-btn').disabled = (data.state === 'running');
+            // Update button states based on crawler state
+            const isRunning = data.state === 'running';
+            const isIdle = data.state === 'idle' || data.state === 'finished' || data.state === 'error';
+            
+            document.getElementById('dashboard-start-btn').disabled = !isIdle;
+            document.getElementById('dashboard-pause-btn').disabled = !isRunning;
+            document.getElementById('dashboard-resume-btn').disabled = !isRunning;
+            document.getElementById('dashboard-stop-btn').disabled = isIdle;
             
             state.crawlerStatus = data.state;
         }
@@ -1199,6 +1270,18 @@
         // Event handlers
         document.getElementById('dashboard-start-btn').addEventListener('click', () => {
             startCrawl();
+        });
+        
+        document.getElementById('dashboard-pause-btn').addEventListener('click', () => {
+            pauseCrawl();
+        });
+        
+        document.getElementById('dashboard-resume-btn').addEventListener('click', () => {
+            resumeCrawl();
+        });
+        
+        document.getElementById('dashboard-stop-btn').addEventListener('click', () => {
+            stopCrawl();
         });
         
         document.getElementById('log-auto-scroll').addEventListener('change', (e) => {
