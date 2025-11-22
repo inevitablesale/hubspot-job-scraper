@@ -1,4 +1,5 @@
 .job_cache.json
+.job_tracking.json
 __pycache__/
 *.py[cod]
 .venv/

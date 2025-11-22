@@ -312,8 +312,10 @@ curl -N -X POST /scrape/stream -d '{"domains": [...]}'
 
 ## Security Considerations
 
-- CORS is set to `allow_origins=["*"]` - restrict in production
-- No authentication required (add if needed)
+- CORS is configurable via `CORS_ORIGINS` environment variable
+  - Default: `allow_origins=["*"]` - accepts all origins
+  - Production: Set to specific domains, e.g., `CORS_ORIGINS=https://myapp.com,https://admin.myapp.com`
+- No authentication required by default (add if needed)
 - Rate limiting applies per domain
 - Playwright runs in headless mode with sandboxing
 

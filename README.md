@@ -172,6 +172,10 @@ Most behavior can be tuned without touching the code:
 * `MAX_DEPTH` – Maximum recursion depth (default 3).
 * `RATE_LIMIT_DELAY` – Delay between requests per domain in seconds (default 1.0).
 
+**API / Server**
+
+* `CORS_ORIGINS` – Comma-separated list of allowed CORS origins for SSE streaming. Defaults to `*` (all origins). Example: `CORS_ORIGINS=https://example.com,https://app.example.com`.
+
 **Extraction & Tracking**
 
 * `ENABLE_HTML_ARCHIVE` – Enable HTML archiving for debugging (default false).

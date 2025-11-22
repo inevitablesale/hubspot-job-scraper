@@ -6,6 +6,7 @@ import threading
 import subprocess
 from datetime import datetime
 from typing import Optional, List
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -23,10 +24,15 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HubSpot Job Scraper Control")
 
+# CORS configuration - restrict in production
+# Set CORS_ORIGINS environment variable to restrict origins, e.g.:
+# CORS_ORIGINS=https://example.com,https://app.example.com
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,11 +62,13 @@ async def stream_scrape(domains: List[str]):
         
         # Create tasks for all domains
         tasks = []
+        domain_map = {}  # Map tasks to domains for error handling
         for domain_url in domains:
-            # Extract company name from domain
-            company_name = domain_url.replace('https://', '').replace('http://', '').split('/')[0]
+            # Extract company name from domain using urlparse
+            company_name = urlparse(domain_url).netloc
             task = asyncio.create_task(scrape_domain_wrapper(scraper, domain_url, company_name))
             tasks.append(task)
+            domain_map[task] = domain_url
         
         # Stream results as they complete
         for finished_task in asyncio.as_completed(tasks):
@@ -70,8 +78,10 @@ async def stream_scrape(domains: List[str]):
                 yield f"data: {json.dumps(result)}\n\n"
             except Exception as e:
                 logger.error("[STREAM] Error processing domain: %s", e)
+                # Get the actual domain from the task map
+                failed_domain = domain_map.get(finished_task, "unknown")
                 error_result = {
-                    "domain": "unknown",
+                    "domain": failed_domain,
                     "status": "error",
                     "error": str(e),
                     "jobs": []
