@@ -6,6 +6,8 @@ Tests domain and category blacklisting functionality.
 
 import unittest
 from blacklist import DomainBlacklist
+from career_detector import CareerPageDetector
+from scraper_engine import JobScraper
 
 
 class TestDomainBlacklist(unittest.TestCase):
@@ -251,7 +253,6 @@ class TestCareerDetectorBlacklist(unittest.TestCase):
     
     def setUp(self):
         """Set up test fixtures."""
-        from career_detector import CareerPageDetector
         self.detector = CareerPageDetector()
     
     def test_filters_blacklisted_career_links(self):
@@ -287,8 +288,6 @@ class TestScraperEngineBlacklist(unittest.TestCase):
     
     def test_should_skip_blacklisted_domains(self):
         """Test that _should_skip_domain correctly identifies blacklisted domains."""
-        from scraper_engine import JobScraper
-        
         scraper = JobScraper()
         
         # Test blacklisted domains
@@ -309,8 +308,6 @@ class TestScraperEngineBlacklist(unittest.TestCase):
     
     def test_should_not_skip_allowed_domains(self):
         """Test that legitimate domains are not skipped."""
-        from scraper_engine import JobScraper
-        
         scraper = JobScraper()
         
         # Test allowed domains
