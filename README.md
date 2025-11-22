@@ -1,41 +1,56 @@
 # hubspot-job-scraper
 
-A small Scrapy project that crawls company websites, looks for career pages, and sends HubSpot-related roles to an ntfy topic.
+A domain-level job scraper that crawls company websites directly, detects career pages, and extracts HubSpot-related roles using multi-layer extraction and scoring.
 
 ## What it does
 
-* Reads a JSON list of company websites from `DOMAINS_FILE` (or the Render secret mount at `/etc/secrets/DOMAINS_FILE`).
-* Visits each homepage, follows internal career-looking links (including common ATS hosts), and flags pages that score as HubSpot **Developer** or **Consultant** roles.
-* Follows off-domain ATS career links (Greenhouse, Ashby, Workable, BambooHR, Lever, etc.), then recursively walks job / listing URLs on those hosts and scores every page.
-* Buffers only new jobs (deduped via `.job_cache.json`) and posts formatted alerts to `https://ntfy.sh/hubspot_job_alerts` with optional email/SMS/Slack headers.
-* Exposes a FastAPI “control room” with live log streaming, status endpoints, and an ECharts-powered activity pulse.
-* Handles DNS failures gracefully, marks dead domains to avoid repeated errors, skips social/link-shortener detours (Instagram, Facebook, Yelp, Wix, etc.), and throttles per-domain requests with exponential backoff retries for noisy sites.
+* **NOT a job board scraper** - this targets individual company domains
+* Reads a JSON list of company websites from `DOMAINS_FILE` (or the Render secret mount at `/etc/secrets/DOMAINS_FILE`)
+* Uses **Playwright** for browser automation (headless Chrome)
+* Crawls each domain directly with custom recursion logic
+* Detects pages that resemble "careers", "jobs", "opportunities", "join us", etc.
+* Runs a **multi-layer extraction engine** to find jobs:
+  1. **JSON-LD JobPosting extractor** - structured data
+  2. **Anchor-based extractor** - `<a>` tags with job keywords
+  3. **Button-based extractor** - `<button>` elements (handles modals)
+  4. **Section-based extractor** - blocks under "Open Positions" / "Join Us" / "We're Hiring"
+  5. **Heading-based extractor** - fallback using `<h1>`-`<h6>` tags
+* **Deduplicates** job entries based on (title, url)
+* **Classifies and scores** each job using the role-scoring engine:
+  - Developer rules (threshold ≥ 60): HubSpot mentions (+25), CMS Hub (+25), custom modules/theme development (+15), HubSpot API/integrations (+20), developer/engineer title (+10)
+  - Consultant rules (threshold ≥ 50): HubSpot mentions (+25), RevOps/Marketing Ops/MOPS (+20), workflows/automation/implementation (+15), CRM migration/onboarding (+20), consultant/specialist/solutions architect (+10)
+* Detects **remote / hybrid / onsite** signals
+* Builds complete job payload including:
+  - Job title
+  - URL
+  - Summary
+  - Company metadata
+  - Role classification
+  - Score
+  - Extracted hiring signals
+  - Timestamp
+* Sends jobs into **notifier pipelines** (ntfy, Slack, future: HubSpot sync)
 
-## HubSpot-first detection
+## Architecture
 
-The spider requires **both** HubSpot technology signals and role intent. Pages are scored and only emitted when they cross the relevant threshold.
+**100% Playwright + BeautifulSoup + custom recursion. NO Scrapy. NO spiders. NO crawler frameworks.**
 
-* Developer rules (threshold ≥ 60): HubSpot mentions (+25), CMS Hub (+25), custom modules/theme development (+15), HubSpot API/integrations (+20), developer/engineer title (+10).
-* Consultant rules (threshold ≥ 50): HubSpot mentions (+25), RevOps/Marketing Ops/MOPS (+20), workflows/automation/implementation (+15), CRM migration/onboarding (+20), consultant/specialist/solutions architect (+10).
-
-Career-link discovery is tightened with added keywords (apply, team, we-are-hiring, work-with-me) and recognition of hosted career systems (Greenhouse, Ashby, Workable, BambooHR, Lever) in addition to typical `/careers`/`/jobs` paths.
-
-When a company’s “Careers” button points to a third-party ATS, the spider switches into **“follow-then-parse” ATS mode**:
-it treats the ATS host as a mini crawl root, follows internal `/jobs` / `/job` / `/careers` / `/positions` style URLs, and applies the same HubSpot scoring to each job detail page.
-Only pages that cross the score threshold emit notifications.
+```
+Domain List → Playwright Browser → Career Page Detection → Multi-Layer Extraction →
+Role Scoring → Deduplication → Job Payloads → Notifications (ntfy/Slack/HubSpot)
+```
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
+playwright install chromium  # Install browser
 ```
 
 Your domains file must be a JSON array using either of these shapes:
 
 * Objects: `{ "website": "https://example.com", "title": "Example" }`
 * Strings: `"https://example.com"` (used for both `website` and `title`)
-
-Google `/url` redirect entries are unwrapped automatically so the crawl starts on the real site.
 
 ## Running as a Web Service (FastAPI UI)
 
@@ -57,7 +72,7 @@ If you prefer a portless worker, use the simpler entrypoint:
 python run_spider.py
 ```
 
-This runs the crawler with the same dataset rules and ntfy notification pipeline, then exits when complete.
+This runs the crawler with the same dataset rules and notification pipeline, then exits when complete.
 
 ## Configuration via environment variables
 
@@ -66,8 +81,10 @@ Most behavior can be tuned without touching the code:
 **Core data / crawl**
 
 * `DOMAINS_FILE` – path to the JSON file with domains (overrides `/etc/secrets/DOMAINS_FILE`).
-* `LOG_LEVEL` – Scrapy log level (DEBUG, INFO, ERROR, etc.). Defaults to `ERROR`.
-* `DOWNLOAD_TIMEOUT` – per-request timeout in seconds (default 20).
+* `LOG_LEVEL` – Log level (DEBUG, INFO, ERROR, etc.). Defaults to `INFO`.
+* `PAGE_TIMEOUT` – Page load timeout in milliseconds (default 30000).
+* `MAX_PAGES_PER_DOMAIN` – Maximum pages to crawl per domain (default 20).
+* `MAX_DEPTH` – Maximum recursion depth (default 3).
 
 **Notifications**
 
@@ -75,7 +92,6 @@ Most behavior can be tuned without touching the code:
 * `EMAIL_TO` – email address for ntfy email relay (optional).
 * `SMS_TO` – phone number for ntfy SMS relay (optional).
 * `SLACK_WEBHOOK` – Slack incoming webhook URL (optional).
-* `JOB_CACHE_PATH` – path to the job cache file. Defaults to `.job_cache.json`.
 
 **Role / fit filters**
 
@@ -83,4 +99,54 @@ Most behavior can be tuned without touching the code:
 * `REMOTE_ONLY` – when set to true, only remote-friendly roles are kept (based on content signals).
 * `ALLOW_AGENCIES` – when set to true, do not automatically drop staffing / recruiting agency job pages.
 
-These flags let you tighten the feed to exactly what you care about (e.g., remote HubSpot developer roles only, architect-level consulting, etc.) without changing the spider logic.
+These flags let you tighten the feed to exactly what you care about (e.g., remote HubSpot developer roles only, architect-level consulting, etc.) without changing the scraper logic.
+
+## Testing
+
+Run the test suite:
+
+```bash
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+Tests cover:
+- Multi-layer extraction (JSON-LD, anchors, buttons, sections, headings)
+- Role classification and scoring
+- Deduplication
+- Filter logic
+
+## Project Structure
+
+```
+├── career_detector.py      # Career page detection logic
+├── extractors.py            # Multi-layer job extraction engine
+├── role_classifier.py       # Role scoring and classification
+├── scraper_engine.py        # Main Playwright-based scraper
+├── notifier.py              # Notification system (ntfy, Slack)
+├── main.py                  # Main entry point
+├── run_spider.py            # Background worker entry point
+├── server.py                # FastAPI control room
+├── test_extractors.py       # Extractor tests
+├── test_role_classifier.py  # Role classifier tests
+└── scrapy_project/          # Legacy Scrapy code (deprecated)
+```
+
+## Key Features
+
+✅ **NO Scrapy** - Pure Playwright + BeautifulSoup + custom recursion  
+✅ **Multi-layer extraction** - 5 different extraction strategies  
+✅ **HubSpot-focused** - Role classification tailored for HubSpot jobs  
+✅ **Smart deduplication** - Based on (title, url) tuples  
+✅ **Location detection** - Remote/hybrid/onsite signals  
+✅ **Configurable** - Environment-based configuration  
+✅ **FastAPI UI** - Live log streaming and control room  
+✅ **Tested** - Comprehensive test coverage  
+
+## Future Enhancements
+
+- [ ] HubSpot API integration for syncing jobs as deals/custom objects
+- [ ] Concurrency improvements for faster crawling
+- [ ] Caching layer for career page detection
+- [ ] Enhanced ATS platform support
+- [ ] Webhook notifications
+- [ ] Job history tracking and analytics
