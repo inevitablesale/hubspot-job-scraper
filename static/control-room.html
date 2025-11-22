@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HubSpot Scraper Control Room</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <style>
+        :root {
+            /* Light Mode */
+            --bg-light: #F9FAFB;
+            --panel-light: #FFFFFF;
+            --text-primary-light: #111827;
+            --text-secondary-light: #6B7280;
+            --border-light: #E5E7EB;
+            --accent-light: #2563EB;
+            
+            /* Dark Mode */
+            --bg-dark: #0F1115;
+            --panel-dark: #1A1C20;
+            --text-primary-dark: #F3F4F6;
+            --text-secondary-dark: #9CA3AF;
+            --border-dark: #2D3035;
+            --accent-dark: #3B82F6;
+            
+            /* Semantic Colors */
+            --success: #16A34A;
+            --warning: #F59E0B;
+            --error: #DC2626;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 15px;
+            line-height: 1.5;
+            background: var(--bg-dark);
+            color: var(--text-primary-dark);
+            overflow-x: hidden;
+        }
+        
+        /* Layout */
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 240px;
+            background: var(--panel-dark);
+            border-right: 1px solid var(--border-dark);
+            display: flex;
+            flex-direction: column;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+        }
+        
+        .sidebar-header {
+            padding: 24px 20px;
+            border-bottom: 1px solid var(--border-dark);
+        }
+        
+        .sidebar-brand {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary-dark);
+        }
+        
+        .sidebar-nav {
+            flex: 1;
+            padding: 16px 0;
+        }
+        
+        .nav-section {
+            margin-bottom: 24px;
+        }
+        
+        .nav-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary-dark);
+            padding: 0 20px 8px;
+        }
+        
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 20px;
+            color: var(--text-secondary-dark);
+            text-decoration: none;
+            transition: all 0.15s ease;
+            border-left: 4px solid transparent;
+            cursor: pointer;
+        }
+        
+        .nav-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary-dark);
+        }
+        
+        .nav-item.active {
+            background: rgba(59, 130, 246, 0.1);
+            color: var(--accent-dark);
+            border-left-color: var(--accent-dark);
+        }
+        
+        .nav-item svg {
+            width: 18px;
+            height: 18px;
+        }
+        
+        /* Main Content */
+        .main-content {
+            margin-left: 240px;
+            flex: 1;
+            padding: 32px;
+            max-width: 1400px;
+        }
+        
+        /* Page Header */
+        .page-header {
+            margin-bottom: 32px;
+        }
+        
+        .page-title {
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--text-primary-dark);
+            margin-bottom: 8px;
+        }
+        
+        .page-subtitle {
+            font-size: 15px;
+            color: var(--text-secondary-dark);
+        }
+        
+        /* Cards */
+        .card {
+            background: var(--panel-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .card-header {
+            margin-bottom: 16px;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary-dark);
+        }
+        
+        /* Grid */
+        .grid {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .grid-cols-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .grid-cols-3 {
+            grid-template-columns: repeat(3, 1fr);
+        }
+        
+        .grid-cols-4 {
+            grid-template-columns: repeat(4, 1fr);
+        }
+        
+        /* Badges */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 6px;
+        }
+        
+        .badge-gray {
+            background: rgba(148, 163, 184, 0.15);
+            color: #94A3B8;
+        }
+        
+        .badge-green {
+            background: rgba(22, 163, 74, 0.15);
+            color: #4ADE80;
+        }
+        
+        .badge-yellow {
+            background: rgba(245, 158, 11, 0.15);
+            color: #FCD34D;
+        }
+        
+        .badge-red {
+            background: rgba(220, 38, 38, 0.15);
+            color: #F87171;
+        }
+        
+        .badge-blue {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60A5FA;
+        }
+        
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            font-size: 15px;
+            font-weight: 600;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-decoration: none;
+        }
+        
+        .btn-primary {
+            background: #2563EB;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #1D4ED8;
+        }
+        
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary-dark);
+            border: 1px solid var(--border-dark);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+        .btn-danger {
+            background: #DC2626;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #B91C1C;
+        }
+        
+        /* Stat Card */
+        .stat-card {
+            background: var(--panel-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        
+        .stat-label {
+            font-size: 14px;
+            color: var(--text-secondary-dark);
+            margin-bottom: 8px;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary-dark);
+        }
+        
+        /* Log Console */
+        .log-console {
+            background: #0b0e14;
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            height: 500px;
+            overflow-y: auto;
+        }
+        
+        .log-line {
+            margin-bottom: 4px;
+        }
+        
+        .log-line.info {
+            color: #9CA3AF;
+        }
+        
+        .log-line.warning {
+            color: #FCD34D;
+        }
+        
+        .log-line.error {
+            color: #F87171;
+        }
+        
+        .log-line.domain {
+            color: #60A5FA;
+        }
+        
+        /* Timeline */
+        .timeline {
+            position: relative;
+            padding-left: 32px;
+        }
+        
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 8px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border-dark);
+        }
+        
+        .timeline-item {
+            position: relative;
+            padding-bottom: 24px;
+        }
+        
+        .timeline-dot {
+            position: absolute;
+            left: -28px;
+            top: 4px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid var(--accent-dark);
+            background: var(--panel-dark);
+        }
+        
+        .timeline-content {
+            background: var(--panel-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        
+        .timeline-domain {
+            font-weight: 600;
+            color: var(--text-primary-dark);
+            margin-bottom: 4px;
+        }
+        
+        .timeline-note {
+            font-size: 14px;
+            color: var(--text-secondary-dark);
+            margin-top: 8px;
+        }
+        
+        /* Table */
+        .table-container {
+            overflow-x: auto;
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        thead {
+            background: rgba(255, 255, 255, 0.02);
+            position: sticky;
+            top: 0;
+        }
+        
+        th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-secondary-dark);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-dark);
+        }
+        
+        td {
+            padding: 14px 16px;
+            color: var(--text-primary-dark);
+            border-bottom: 1px solid var(--border-dark);
+        }
+        
+        tbody tr:hover {
+            background: rgba(255, 255, 255, 0.03);
+        }
+        
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .modal.active {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: var(--panel-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 12px;
+            padding: 32px;
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .modal-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+            justify-content: flex-end;
+        }
+        
+        /* Drawer */
+        .drawer {
+            position: fixed;
+            top: 0;
+            right: -500px;
+            width: 500px;
+            height: 100vh;
+            background: var(--panel-dark);
+            border-left: 1px solid var(--border-dark);
+            transition: right 0.3s ease;
+            overflow-y: auto;
+            z-index: 999;
+        }
+        
+        .drawer.active {
+            right: 0;
+        }
+        
+        .drawer-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border-dark);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .drawer-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .drawer-content {
+            padding: 24px;
+        }
+        
+        /* Status Pill */
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 999px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        
+        .status-idle {
+            background: rgba(148, 163, 184, 0.15);
+            color: #94A3B8;
+        }
+        
+        .status-running {
+            background: rgba(22, 163, 74, 0.15);
+            color: #4ADE80;
+        }
+        
+        .status-error {
+            background: rgba(220, 38, 38, 0.15);
+            color: #F87171;
+        }
+        
+        .pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            border-bottom: 1px solid var(--border-dark);
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary-dark);
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        
+        .tab:hover {
+            color: var(--text-primary-dark);
+        }
+        
+        .tab.active {
+            color: var(--accent-dark);
+            border-bottom-color: var(--accent-dark);
+        }
+        
+        /* Hidden */
+        .hidden {
+            display: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+            
+            .sidebar.mobile-open {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .grid-cols-2,
+            .grid-cols-3,
+            .grid-cols-4 {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="layout">
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">HubSpot Scraper Control Room</div>
+            </div>
+            
+            <div class="sidebar-nav">
+                <div class="nav-section">
+                    <div class="nav-section-title">SYSTEM</div>
+                    <a class="nav-item active" data-page="dashboard">
+                        <i data-lucide="layout-dashboard"></i>
+                        <span>Dashboard</span>
+                    </a>
+                    <a class="nav-item" data-page="control-room">
+                        <i data-lucide="radio"></i>
+                        <span>Crawler Control</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">DATA</div>
+                    <a class="nav-item" data-page="domains">
+                        <i data-lucide="globe"></i>
+                        <span>Domains</span>
+                    </a>
+                    <a class="nav-item" data-page="jobs">
+                        <i data-lucide="briefcase"></i>
+                        <span>Jobs</span>
+                    </a>
+                    <a class="nav-item" data-page="logs">
+                        <i data-lucide="terminal"></i>
+                        <span>Logs</span>
+                    </a>
+                </div>
+                
+                <div class="nav-section">
+                    <div class="nav-section-title">SETTINGS</div>
+                    <a class="nav-item" data-page="config">
+                        <i data-lucide="settings"></i>
+                        <span>Config</span>
+                    </a>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Dashboard Page -->
+            <div id="page-dashboard" class="page-content">
+                <div class="page-header">
+                    <h1 class="page-title">Dashboard</h1>
+                    <p class="page-subtitle">System overview and quick actions</p>
+                </div>
+                
+                <!-- Hero Bar -->
+                <div class="card" style="margin-bottom: 24px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">System Status</div>
+                            <div id="dashboard-status-pill" class="status-pill status-idle">
+                                <span class="pulse"></span>
+                                <span>Idle</span>
+                            </div>
+                            <div style="margin-top: 12px; color: var(--text-secondary-dark); font-size: 14px;">
+                                Last run: <span id="dashboard-last-run">Never</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 12px;">
+                            <button class="btn btn-primary" id="dashboard-start-btn">
+                                <i data-lucide="play"></i>
+                                Start Crawl
+                            </button>
+                            <button class="btn btn-secondary" onclick="navigateTo('control-room')">
+                                <i data-lucide="radio"></i>
+                                View Control Room
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Stats Grid -->
+                <div class="grid grid-cols-4" style="margin-bottom: 24px;">
+                    <div class="stat-card">
+                        <div class="stat-label">Domains Loaded</div>
+                        <div class="stat-value" id="dashboard-domains">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Career Pages Found</div>
+                        <div class="stat-value" id="dashboard-careers">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Jobs Extracted</div>
+                        <div class="stat-value" id="dashboard-jobs">—</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Errors</div>
+                        <div class="stat-value" style="color: var(--error);" id="dashboard-errors">—</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Control Room Page -->
+            <div id="page-control-room" class="page-content hidden">
+                <div class="page-header">
+                    <h1 class="page-title">Crawl Control Room</h1>
+                    <p class="page-subtitle">Live crawl monitoring and debugging</p>
+                </div>
+                
+                <div class="grid grid-cols-2">
+                    <!-- Timeline Column -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Timeline</div>
+                        </div>
+                        <div class="timeline" id="control-room-timeline">
+                            <div class="timeline-item">
+                                <div class="timeline-dot"></div>
+                                <div class="timeline-content">
+                                    <div class="timeline-domain">Waiting for crawl...</div>
+                                    <div class="badge badge-gray">Idle</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Detail Panel -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Details</div>
+                        </div>
+                        <div class="tabs">
+                            <button class="tab active" data-tab="overview">Overview</button>
+                            <button class="tab" data-tab="extraction">Extraction Notes</button>
+                        </div>
+                        <div id="control-room-details">
+                            <div class="tab-content" data-content="overview">
+                                <p style="color: var(--text-secondary-dark);">Select a domain from the timeline</p>
+                            </div>
+                            <div class="tab-content hidden" data-content="extraction">
+                                <p style="color: var(--text-secondary-dark);">Extraction details will appear here</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Logs Page -->
+            <div id="page-logs" class="page-content hidden">
+                <div class="page-header">
+                    <h1 class="page-title">Logs</h1>
+                    <p class="page-subtitle">Real-time system logs</p>
+                </div>
+                
+                <div class="card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                        <div style="display: flex; gap: 12px;">
+                            <label style="display: flex; align-items: center; gap: 8px; color: var(--text-secondary-dark);">
+                                <input type="checkbox" id="log-auto-scroll" checked>
+                                <span>Auto-scroll</span>
+                            </label>
+                            <button class="btn btn-secondary" id="log-jump-latest">
+                                <i data-lucide="arrow-down"></i>
+                                Jump to Latest
+                            </button>
+                        </div>
+                        <button class="btn btn-secondary" id="log-download">
+                            <i data-lucide="download"></i>
+                            Download
+                        </button>
+                    </div>
+                    <div class="log-console" id="log-console">
+                        <div class="log-line info">Waiting for logs...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Jobs Page -->
+            <div id="page-jobs" class="page-content hidden">
+                <div class="page-header">
+                    <h1 class="page-title">Jobs</h1>
+                    <p class="page-subtitle">Browse extracted job postings</p>
+                </div>
+                
+                <!-- Search Bar -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <input type="text" id="job-search" placeholder="Search jobs..." 
+                           style="width: 100%; padding: 12px; background: var(--bg-dark); border: 1px solid var(--border-dark); border-radius: 6px; color: var(--text-primary-dark); font-size: 15px;">
+                </div>
+                
+                <!-- Jobs Table -->
+                <div class="card">
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Job Title</th>
+                                    <th>Domain</th>
+                                    <th>Location</th>
+                                    <th>Type</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="jobs-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: var(--text-secondary-dark);">No jobs found</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Domains Page -->
+            <div id="page-domains" class="page-content hidden">
+                <div class="page-header">
+                    <h1 class="page-title">Domains</h1>
+                    <p class="page-subtitle">Manage and monitor domains</p>
+                </div>
+                
+                <div class="card">
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Domain</th>
+                                    <th>Category</th>
+                                    <th>Status</th>
+                                    <th>Last Scraped</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="domains-table-body">
+                                <tr>
+                                    <td colspan="5" style="text-align: center; color: var(--text-secondary-dark);">Loading domains...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Config Page -->
+            <div id="page-config" class="page-content hidden">
+                <div class="page-header">
+                    <h1 class="page-title">Configuration</h1>
+                    <p class="page-subtitle">Crawler settings and filters</p>
+                </div>
+                
+                <div class="grid grid-cols-2">
+                    <!-- Role Filters -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Role Filters</div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; margin-bottom: 8px; color: var(--text-secondary-dark); font-size: 14px;">Allowed Roles (comma-separated)</label>
+                            <input type="text" id="config-role-filter" placeholder="developer, consultant, architect" 
+                                   style="width: 100%; padding: 10px; background: var(--bg-dark); border: 1px solid var(--border-dark); border-radius: 6px; color: var(--text-primary-dark);">
+                        </div>
+                        <div>
+                            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                                <input type="checkbox" id="config-remote-only">
+                                <span>Remote-only roles</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Crawl Settings -->
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">Crawl Settings</div>
+                        </div>
+                        <div style="margin-bottom: 16px;">
+                            <label style="display: block; margin-bottom: 8px; color: var(--text-secondary-dark); font-size: 14px;">Max Depth</label>
+                            <input type="number" id="config-max-depth" value="3" min="1" max="5"
+                                   style="width: 100%; padding: 10px; background: var(--bg-dark); border: 1px solid var(--border-dark); border-radius: 6px; color: var(--text-primary-dark);">
+                        </div>
+                        <div>
+                            <label style="display: block; margin-bottom: 8px; color: var(--text-secondary-dark); font-size: 14px;">Max Pages per Domain</label>
+                            <input type="number" id="config-max-pages" value="20" min="5" max="100"
+                                   style="width: 100%; padding: 10px; background: var(--bg-dark); border: 1px solid var(--border-dark); border-radius: 6px; color: var(--text-primary-dark);">
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px; display: flex; justify-content: flex-end;">
+                    <button class="btn btn-primary" id="config-save">
+                        <i data-lucide="save"></i>
+                        Save Configuration
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <!-- Job Detail Drawer -->
+    <div class="drawer" id="job-drawer">
+        <div class="drawer-header">
+            <div class="drawer-title" id="job-drawer-title">Job Details</div>
+            <button class="btn btn-secondary" onclick="closeDrawer()">
+                <i data-lucide="x"></i>
+            </button>
+        </div>
+        <div class="drawer-content" id="job-drawer-content">
+            <p style="color: var(--text-secondary-dark);">Select a job to view details</p>
+        </div>
+    </div>
+    
+    <!-- Confirm Modal -->
+    <div class="modal" id="confirm-modal">
+        <div class="modal-content">
+            <div class="modal-title">Confirm Action</div>
+            <p id="confirm-modal-message" style="color: var(--text-secondary-dark); margin-bottom: 20px;"></p>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-danger" id="confirm-modal-action">Confirm</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+        
+        // State management
+        let state = {
+            currentPage: 'dashboard',
+            crawlerStatus: 'idle',
+            autoScroll: true,
+            logs: [],
+            jobs: []
+        };
+        
+        // Navigation
+        function navigateTo(page) {
+            // Hide all pages
+            document.querySelectorAll('.page-content').forEach(p => p.classList.add('hidden'));
+            
+            // Show selected page
+            document.getElementById(`page-${page}`).classList.remove('hidden');
+            
+            // Update nav items
+            document.querySelectorAll('.nav-item').forEach(item => {
+                if (item.dataset.page === page) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+            
+            state.currentPage = page;
+            
+            // Load page data
+            loadPageData(page);
+        }
+        
+        // Add navigation listeners
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', (e) => {
+                e.preventDefault();
+                navigateTo(item.dataset.page);
+            });
+        });
+        
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabName = tab.dataset.tab;
+                const parent = tab.closest('.card');
+                
+                // Update tab states
+                parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                // Update content
+                parent.querySelectorAll('.tab-content').forEach(content => {
+                    if (content.dataset.content === tabName) {
+                        content.classList.remove('hidden');
+                    } else {
+                        content.classList.add('hidden');
+                    }
+                });
+            });
+        });
+        
+        // API calls
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                updateDashboard(data);
+                return data;
+            } catch (error) {
+                console.error('Failed to fetch status:', error);
+            }
+        }
+        
+        async function fetchLogs() {
+            try {
+                const response = await fetch('/logs?lines=100');
+                const data = await response.json();
+                updateLogs(data.logs);
+            } catch (error) {
+                console.error('Failed to fetch logs:', error);
+            }
+        }
+        
+        async function fetchJobs() {
+            try {
+                const response = await fetch('/jobs');
+                const data = await response.json();
+                state.jobs = data.jobs;
+                updateJobsTable();
+            } catch (error) {
+                console.error('Failed to fetch jobs:', error);
+            }
+        }
+        
+        async function startCrawl(config = {}) {
+            try {
+                const response = await fetch('/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    alert('Crawl started successfully');
+                    fetchStatus();
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to start: ${error.detail}`);
+                }
+            } catch (error) {
+                alert('Network error');
+            }
+        }
+        
+        // Update functions
+        function updateDashboard(data) {
+            // Update status pill
+            const statusPill = document.getElementById('dashboard-status-pill');
+            statusPill.className = `status-pill status-${data.state}`;
+            statusPill.innerHTML = `<span class="pulse"></span><span>${data.state.charAt(0).toUpperCase() + data.state.slice(1)}</span>`;
+            
+            // Update last run
+            if (data.last_run_started_at) {
+                const date = new Date(data.last_run_started_at);
+                document.getElementById('dashboard-last-run').textContent = date.toLocaleString();
+            }
+            
+            // Update stats
+            document.getElementById('dashboard-domains').textContent = data.domains_total || '—';
+            document.getElementById('dashboard-jobs').textContent = data.jobs_found || '—';
+            
+            // Update button state
+            document.getElementById('dashboard-start-btn').disabled = (data.state === 'running');
+            
+            state.crawlerStatus = data.state;
+        }
+        
+        function updateLogs(logs) {
+            if (!logs || logs.length === 0) return;
+            
+            const container = document.getElementById('log-console');
+            container.innerHTML = logs.map(log => {
+                const time = new Date(log.timestamp).toLocaleTimeString();
+                const level = log.level.toLowerCase();
+                return `<div class="log-line ${level}">[${time}] ${escapeHtml(log.message)}</div>`;
+            }).join('');
+            
+            if (state.autoScroll) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+        
+        function updateJobsTable() {
+            const tbody = document.getElementById('jobs-table-body');
+            
+            if (state.jobs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-secondary-dark);">No jobs found</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = state.jobs.map(job => `
+                <tr>
+                    <td><strong>${escapeHtml(job.title)}</strong></td>
+                    <td>${escapeHtml(job.company)}</td>
+                    <td>${escapeHtml(job.location || 'Remote')}</td>
+                    <td><span class="badge badge-blue">Remote</span></td>
+                    <td>
+                        <button class="btn btn-secondary" onclick='viewJob(${JSON.stringify(job)})'>
+                            <i data-lucide="eye"></i>
+                            View
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            lucide.createIcons();
+        }
+        
+        function loadPageData(page) {
+            switch(page) {
+                case 'dashboard':
+                    fetchStatus();
+                    break;
+                case 'logs':
+                    fetchLogs();
+                    break;
+                case 'jobs':
+                    fetchJobs();
+                    break;
+            }
+        }
+        
+        // Event handlers
+        document.getElementById('dashboard-start-btn').addEventListener('click', () => {
+            startCrawl();
+        });
+        
+        document.getElementById('log-auto-scroll').addEventListener('change', (e) => {
+            state.autoScroll = e.target.checked;
+        });
+        
+        document.getElementById('log-jump-latest').addEventListener('click', () => {
+            const container = document.getElementById('log-console');
+            container.scrollTop = container.scrollHeight;
+        });
+        
+        document.getElementById('log-download').addEventListener('click', () => {
+            alert('Download feature coming soon');
+        });
+        
+        document.getElementById('job-search').addEventListener('input', (e) => {
+            const search = e.target.value.toLowerCase();
+            // Implement search filter
+        });
+        
+        document.getElementById('config-save').addEventListener('click', () => {
+            alert('Configuration saved');
+        });
+        
+        // Drawer management
+        function openDrawer(drawerId) {
+            document.getElementById(drawerId).classList.add('active');
+        }
+        
+        function closeDrawer() {
+            document.querySelectorAll('.drawer').forEach(d => d.classList.remove('active'));
+        }
+        
+        function viewJob(job) {
+            document.getElementById('job-drawer-title').textContent = job.title;
+            document.getElementById('job-drawer-content').innerHTML = `
+                <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; color: var(--text-secondary-dark); margin-bottom: 4px;">Company</div>
+                    <div style="font-weight: 600;">${escapeHtml(job.company)}</div>
+                </div>
+                <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; color: var(--text-secondary-dark); margin-bottom: 4px;">Location</div>
+                    <div>${escapeHtml(job.location || 'Remote')}</div>
+                </div>
+                ${job.url ? `
+                <div style="margin-bottom: 16px;">
+                    <div style="font-size: 14px; color: var(--text-secondary-dark); margin-bottom: 4px;">URL</div>
+                    <a href="${escapeHtml(job.url)}" target="_blank" style="color: var(--accent-dark);">${escapeHtml(job.url)}</a>
+                </div>
+                ` : ''}
+            `;
+            openDrawer('job-drawer');
+            lucide.createIcons();
+        }
+        
+        // Modal management
+        function closeModal() {
+            document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+        }
+        
+        // Utilities
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Initialize
+        fetchStatus();
+        setInterval(fetchStatus, 3000);
+        setInterval(() => {
+            if (state.currentPage === 'logs') {
+                fetchLogs();
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

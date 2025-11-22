@@ -190,8 +190,14 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
 async def index():
     """Serve the control room UI."""
     static_dir = Path(__file__).parent / "static"
-    index_file = static_dir / "index.html"
     
+    # Try to serve the new control room UI first
+    control_room_file = static_dir / "control-room.html"
+    if control_room_file.exists():
+        return FileResponse(control_room_file)
+    
+    # Fallback to old index.html
+    index_file = static_dir / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
     
