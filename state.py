@@ -118,15 +118,21 @@ class CrawlerState:
         # Background task reference
         self._current_task: Optional[asyncio.Task] = None
         self._stop_requested: bool = False
+        self._pause_requested: bool = False
     
     def is_running(self) -> bool:
         """Check if crawler is currently running."""
         return self._state == "running"
     
+    def is_paused(self) -> bool:
+        """Check if crawler is currently paused."""
+        return self._pause_requested
+    
     def summary(self) -> CrawlSummary:
         """Get current crawl summary."""
         return CrawlSummary(
             state=self._state,
+            paused=self._pause_requested,
             last_run_started_at=self._last_run_started_at,
             last_run_finished_at=self._last_run_finished_at,
             domains_total=self._domains_total,
@@ -142,6 +148,16 @@ class CrawlerState:
             self._state = "stopping"
             logger.info("Stop requested for crawler")
     
+    def request_pause(self):
+        """Request the crawler to pause."""
+        self._pause_requested = True
+        logger.info("Pause requested for crawler")
+    
+    def request_resume(self):
+        """Request the crawler to resume."""
+        self._pause_requested = False
+        logger.info("Resume requested for crawler")
+    
     def start_run(self, domains_total: int):
         """Mark the start of a crawl run."""
         self._state = "running"
@@ -151,6 +167,7 @@ class CrawlerState:
         self._jobs_found = 0
         self._errors_count = 0
         self._stop_requested = False
+        self._pause_requested = False
         logger.info(f"Crawl run started with {domains_total} domains")
     
     def finish_run(self, success: bool = True):

@@ -99,6 +99,85 @@ def test_stop_crawl_when_not_running():
     assert data["reason"] == "not_running"
 
 
+def test_pause_crawl():
+    """Test pausing a crawl."""
+    client = TestClient(app)
+    
+    # Set crawler to running
+    crawler_state._state = "running"
+    crawler_state._pause_requested = False
+    
+    response = client.post("/api/crawl/pause")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is True
+    assert crawler_state._pause_requested is True
+
+
+def test_pause_crawl_when_not_running():
+    """Test pausing when crawler is not running."""
+    client = TestClient(app)
+    
+    # Set crawler to idle
+    crawler_state._state = "idle"
+    
+    response = client.post("/api/crawl/pause")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is False
+    assert data["reason"] == "not_running"
+
+
+def test_resume_crawl():
+    """Test resuming a crawl."""
+    client = TestClient(app)
+    
+    # Set crawler to running and paused
+    crawler_state._state = "running"
+    crawler_state._pause_requested = True
+    
+    response = client.post("/api/crawl/resume")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is True
+    assert crawler_state._pause_requested is False
+
+
+def test_resume_crawl_when_not_running():
+    """Test resuming when crawler is not running."""
+    client = TestClient(app)
+    
+    # Set crawler to idle
+    crawler_state._state = "idle"
+    crawler_state._pause_requested = False
+    
+    response = client.post("/api/crawl/resume")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is False
+    assert data["reason"] == "not_running"
+
+
+def test_resume_crawl_when_not_paused():
+    """Test resuming when crawler is running but not paused."""
+    client = TestClient(app)
+    
+    # Set crawler to running but not paused
+    crawler_state._state = "running"
+    crawler_state._pause_requested = False
+    
+    response = client.post("/api/crawl/resume")
+    assert response.status_code == 200
+    
+    data = response.json()
+    assert data["ok"] is False
+    assert data["reason"] == "not_paused"
+
+
 def test_get_logs():
     """Test getting logs."""
     client = TestClient(app)

@@ -134,6 +134,83 @@ async def stop_crawl():
     )
 
 
+@app.post("/api/crawl/pause", response_model=StartCrawlResponse)
+async def pause_crawl():
+    """
+    Request the crawler to pause.
+    
+    The crawler will pause after finishing the current domain.
+    """
+    if not crawler_state.is_running():
+        return StartCrawlResponse(
+            ok=False,
+            reason="not_running",
+            message="Crawler is not running"
+        )
+    
+    crawler_state.request_pause()
+    
+    logger.info("Crawl pause requested via API")
+    
+    # Emit pause event
+    now = datetime.utcnow()
+    await events_bus.publish(CrawlEvent(
+        id=f"evt_{now.timestamp()}",
+        ts=now,
+        level="info",
+        type="log",
+        message="Crawl pause requested",
+        metadata={"triggered_by": "api"}
+    ))
+    
+    return StartCrawlResponse(
+        ok=True,
+        message="Pause requested"
+    )
+
+
+@app.post("/api/crawl/resume", response_model=StartCrawlResponse)
+async def resume_crawl():
+    """
+    Request the crawler to resume.
+    
+    The crawler will resume from the paused state.
+    """
+    if not crawler_state.is_running():
+        return StartCrawlResponse(
+            ok=False,
+            reason="not_running",
+            message="Crawler is not running"
+        )
+    
+    if not crawler_state.is_paused():
+        return StartCrawlResponse(
+            ok=False,
+            reason="not_paused",
+            message="Crawler is not paused"
+        )
+    
+    crawler_state.request_resume()
+    
+    logger.info("Crawl resume requested via API")
+    
+    # Emit resume event
+    now = datetime.utcnow()
+    await events_bus.publish(CrawlEvent(
+        id=f"evt_{now.timestamp()}",
+        ts=now,
+        level="info",
+        type="log",
+        message="Crawl resume requested",
+        metadata={"triggered_by": "api"}
+    ))
+    
+    return StartCrawlResponse(
+        ok=True,
+        message="Resume requested"
+    )
+
+
 @app.get("/api/crawl/status", response_model=CrawlSummary)
 async def crawl_status():
     """
