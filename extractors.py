@@ -19,7 +19,11 @@ from bs4 import BeautifulSoup, Tag
 
 logger = logging.getLogger(__name__)
 
+# Minimum length for a valid job title
+MIN_JOB_TITLE_LENGTH = 5
+
 # Keywords that suggest a link/button contains job titles or job pages
+# These are ROLE-SPECIFIC keywords that indicate actual job titles
 TITLE_HINTS = [
     "developer",
     "engineer",
@@ -29,16 +33,49 @@ TITLE_HINTS = [
     "manager",
     "analyst",
     "designer",
-    "product",
-    "marketing",
-    "sales",
-    "support",
+    "coordinator",
+    "director",
+    "representative",
+    "associate",
+    "lead",
     "position",
     "role",
-    "job",
-    "apply",
     "opening",
     "opportunity",
+]
+
+# Pre-compile role keyword patterns for performance
+# Word boundaries ensure "engineer" matches "engineer" but not "engineering"
+ROLE_PATTERNS = [re.compile(r'\b' + re.escape(hint) + r'\b', re.IGNORECASE) for hint in TITLE_HINTS]
+
+# Patterns that indicate this is NOT a job title
+# Pre-compiled for performance since they're checked frequently
+FALSE_POSITIVE_PATTERNS = [
+    # Questions
+    re.compile(r'^what\s+(is|are)', re.IGNORECASE),
+    re.compile(r'^how\s+to', re.IGNORECASE),
+    re.compile(r'^why\s+', re.IGNORECASE),
+    # Social media / podcasts
+    re.compile(r'youtube', re.IGNORECASE),
+    re.compile(r'spotify', re.IGNORECASE),
+    re.compile(r'podcast', re.IGNORECASE),
+    re.compile(r'listen\s+on', re.IGNORECASE),
+    re.compile(r'watch\s+on', re.IGNORECASE),
+    # Generic CTAs
+    re.compile(r'^apply\s+(now|today)$', re.IGNORECASE),
+    re.compile(r'^join\s+(us|our\s+team)$', re.IGNORECASE),
+    re.compile(r'^view\s+', re.IGNORECASE),
+    re.compile(r'^see\s+(all|our)', re.IGNORECASE),
+    re.compile(r'^explore\s+', re.IGNORECASE),
+    re.compile(r'^learn\s+more$', re.IGNORECASE),
+    # Blog/resources
+    re.compile(r'^episode\s+\d+', re.IGNORECASE),
+    re.compile(r'^chapter\s+\d+', re.IGNORECASE),
+    # Generic navigation
+    re.compile(r'^about\s+(us)?$', re.IGNORECASE),
+    re.compile(r'^contact\s+(us)?$', re.IGNORECASE),
+    re.compile(r'^our\s+(team|services)', re.IGNORECASE),
+    re.compile(r'^meet\s+', re.IGNORECASE),
 ]
 
 # Headings that indicate job sections
@@ -94,8 +131,23 @@ class JobExtractor:
 
     def _is_job_like(self, text: str) -> bool:
         """Check if text looks like a job title or job-related content."""
-        text_lower = text.lower()
-        return any(hint in text_lower for hint in TITLE_HINTS)
+        if not text or len(text.strip()) < MIN_JOB_TITLE_LENGTH:
+            return False
+            
+        text_lower = text.lower().strip()
+        
+        # Filter out false positives using pre-compiled patterns
+        for pattern in FALSE_POSITIVE_PATTERNS:
+            if pattern.search(text_lower):
+                return False
+        
+        # Check for role-specific keywords using pre-compiled patterns
+        # Word boundaries ensure "engineer" matches "engineer" but not "engineering"
+        for pattern in ROLE_PATTERNS:
+            if pattern.search(text_lower):
+                return True
+        
+        return False
 
     def _dedupe_job(self, title: str, url: Optional[str]) -> bool:
         """
@@ -186,6 +238,10 @@ class AnchorExtractor(JobExtractor):
             href = anchor.get('href')
             title_attr = anchor.get('title', '')
 
+            # Skip if text is too short to be a meaningful job title
+            if len(text) < MIN_JOB_TITLE_LENGTH:
+                continue
+
             # Combine text sources
             combined_text = f"{text} {title_attr}".lower()
 
@@ -213,6 +269,11 @@ class ButtonExtractor(JobExtractor):
 
         for button in soup.find_all('button'):
             text = self._clean_text(button.get_text())
+            
+            # Skip if text is too short to be a meaningful job title
+            if len(text) < MIN_JOB_TITLE_LENGTH:
+                continue
+            
             data_url = button.get('data-url') or button.get('data-href') or button.get('onclick', '')
 
             # Extract URL from onclick handlers
@@ -329,6 +390,10 @@ class HeadingExtractor(JobExtractor):
         for heading_tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
             for heading in soup.find_all(heading_tag):
                 text = self._clean_text(heading.get_text())
+
+                # Skip if text is too short to be a meaningful job title
+                if len(text) < MIN_JOB_TITLE_LENGTH:
+                    continue
 
                 # Check if this looks like a job title
                 if self._is_job_like(text) and text:
