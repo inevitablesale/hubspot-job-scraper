@@ -9,12 +9,13 @@ This scraper is designed to run on Render as a Docker-based web service with bac
 1. **Create a new Web Service** on Render
    - Connect your GitHub repository
    - Set the branch to deploy
-   - **Select "Docker" as the runtime environment**
+   - **The repository includes `render.yaml` which automatically configures Docker deployment**
+   - Render will detect the configuration file and use Docker runtime
 
 2. **Configure Build Settings**
-   Render will automatically detect the Dockerfile and build the image.
+   The `render.yaml` file configures Render to use Docker runtime.
    
-   No build command needed - the Dockerfile handles everything.
+   No manual build command needed - the Dockerfile handles everything.
 
 3. **Configure Start Command**
    For the web server (control room UI):
@@ -128,6 +129,14 @@ Render will automatically ping `/health` or send `HEAD /` requests to check if y
 ## Troubleshooting
 
 ### Docker-Based Deployment
+
+#### "Executable doesn't exist" or "Please run playwright install" Error
+If you see errors like `BrowserType.launch: Executable doesn't exist at /opt/render/.cache/ms-playwright/...`:
+- **This means Render is not using Docker** and is detecting the project as Python
+- **Solution**: Ensure `render.yaml` file exists in the repository root
+- The `render.yaml` file explicitly configures Docker runtime to use the Playwright image with pre-installed browsers
+- After adding/verifying `render.yaml`, trigger a new deployment on Render
+- Verify in the build logs that it says "Using Docker" instead of "Using Python version"
 
 #### Browser Issues
 The Docker image includes pre-installed browsers. If you encounter browser-related errors:
