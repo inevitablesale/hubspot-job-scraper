@@ -451,6 +451,34 @@ async def api_stop_crawl():
     })
 
 
+def _get_recent_logs(limit: int) -> dict:
+    """
+    Helper function to get recent log entries.
+    
+    Args:
+        limit: Number of recent lines to return (max 500)
+        
+    Returns:
+        Dictionary with logs array
+    """
+    limit = min(limit, 500)
+    recent_logs = list(crawl_status.log_buffer)[-limit:]
+    return {"logs": recent_logs}
+
+
+def _get_recent_jobs() -> dict:
+    """
+    Helper function to get recent job results.
+    
+    Returns:
+        Dictionary with jobs array and count
+    """
+    return {
+        "jobs": crawl_status.recent_jobs,
+        "count": len(crawl_status.recent_jobs)
+    }
+
+
 @app.get("/api/system/summary")
 async def get_system_summary():
     """
@@ -476,9 +504,7 @@ async def get_logs(lines: int = 100):
     Returns:
         JSON array of log entries
     """
-    lines = min(lines, 500)
-    recent_logs = list(crawl_status.log_buffer)[-lines:]
-    return JSONResponse(content={"logs": recent_logs})
+    return JSONResponse(content=_get_recent_logs(lines))
 
 
 @app.get("/api/logs")
@@ -492,9 +518,7 @@ async def get_logs_api(limit: int = 100):
     Returns:
         JSON array of log entries
     """
-    limit = min(limit, 500)
-    recent_logs = list(crawl_status.log_buffer)[-limit:]
-    return JSONResponse(content={"logs": recent_logs})
+    return JSONResponse(content=_get_recent_logs(limit))
 
 
 @app.get("/jobs")
@@ -505,10 +529,7 @@ async def get_jobs():
     Returns:
         JSON array of recent jobs
     """
-    return JSONResponse(content={
-        "jobs": crawl_status.recent_jobs,
-        "count": len(crawl_status.recent_jobs)
-    })
+    return JSONResponse(content=_get_recent_jobs())
 
 
 @app.get("/api/jobs")
@@ -519,10 +540,7 @@ async def get_jobs_api():
     Returns:
         JSON array of recent jobs
     """
-    return JSONResponse(content={
-        "jobs": crawl_status.recent_jobs,
-        "count": len(crawl_status.recent_jobs)
-    })
+    return JSONResponse(content=_get_recent_jobs())
 
 
 @app.get("/domains")
