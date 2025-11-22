@@ -332,6 +332,52 @@ async def get_jobs():
     })
 
 
+@app.get("/domains")
+async def get_domains():
+    """
+    Get list of domains from the domains file.
+    
+    Returns:
+        JSON array of domains
+    """
+    try:
+        domains_file = get_domains_file()
+        from scraper_engine import load_domains
+        domains = load_domains(domains_file)
+        
+        # Format domains for display
+        domain_list = []
+        for domain in domains:
+            if isinstance(domain, dict):
+                domain_list.append({
+                    "website": domain.get("website", ""),
+                    "title": domain.get("title", ""),
+                    "category": domain.get("category", "Unknown"),
+                    "status": "Not scraped",
+                    "last_scraped": None
+                })
+            else:
+                domain_list.append({
+                    "website": domain,
+                    "title": domain,
+                    "category": "Unknown",
+                    "status": "Not scraped",
+                    "last_scraped": None
+                })
+        
+        return JSONResponse(content={
+            "domains": domain_list,
+            "count": len(domain_list)
+        })
+    except Exception as e:
+        logger.error(f"Failed to load domains: {e}")
+        return JSONResponse(content={
+            "domains": [],
+            "count": 0,
+            "error": str(e)
+        }, status_code=500)
+
+
 # Mount static files if directory exists
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
