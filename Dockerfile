@@ -1,5 +1,5 @@
 # Render-compatible Dockerfile for Playwright
-FROM mcr.microsoft.com/playwright/python:v1.44.0-jammy
+FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
 
 # Install Python dependencies
 COPY requirements.txt /app/requirements.txt
