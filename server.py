@@ -1,14 +1,151 @@
 import asyncio
+import json
+import logging
 import os
 import threading
 import subprocess
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from scraper_engine import JobScraper
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="HubSpot Job Scraper Control")
+
+# CORS configuration - restrict in production
+# Set CORS_ORIGINS environment variable to restrict origins, e.g.:
+# CORS_ORIGINS=https://example.com,https://app.example.com
+cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+CORS_ORIGINS = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+if not CORS_ORIGINS:
+    CORS_ORIGINS = ["*"]  # Default to allow all if empty
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class ScrapeRequest(BaseModel):
+    """Request model for /scrape/stream endpoint"""
+    domains: List[str]
+
+
+async def stream_scrape(domains: List[str]):
+    """
+    Stream scraping results in real-time using asyncio.as_completed.
+    Each domain result is yielded as soon as it completes.
+    
+    Args:
+        domains: List of domain URLs to scrape
+        
+    Yields:
+        SSE-formatted messages with domain scraping results
+    """
+    scraper = JobScraper()
+    
+    try:
+        # Initialize browser once for all domains
+        await scraper.initialize()
+        
+        # Create tasks for all domains
+        tasks = []
+        domain_map = {}  # Map tasks to domains for error handling
+        for domain_url in domains:
+            # Extract company name from domain using urlparse
+            # Note: This includes subdomains and ports. For cleaner company names,
+            # consider removing 'www.' prefix if needed in the scraper logic.
+            company_name = urlparse(domain_url).netloc
+            task = asyncio.create_task(scrape_domain_wrapper(scraper, domain_url, company_name))
+            tasks.append(task)
+            domain_map[task] = domain_url
+        
+        # Stream results as they complete
+        for finished_task in asyncio.as_completed(tasks):
+            try:
+                result = await finished_task
+                logger.info("[STREAM] Finished %s", result['domain'])
+                yield f"data: {json.dumps(result)}\n\n"
+            except Exception as e:
+                logger.error("[STREAM] Error processing domain: %s", e)
+                # Get the actual domain from the task map
+                failed_domain = domain_map.get(finished_task)
+                if not failed_domain:
+                    logger.warning("Could not determine domain for failed task")
+                    failed_domain = "unknown_domain"
+                error_result = {
+                    "domain": failed_domain,
+                    "status": "error",
+                    "error": str(e),
+                    "jobs": []
+                }
+                yield f"data: {json.dumps(error_result)}\n\n"
+    
+    finally:
+        # Clean up browser
+        await scraper.shutdown()
+
+
+async def scrape_domain_wrapper(scraper: JobScraper, domain_url: str, company_name: str) -> dict:
+    """
+    Wrapper function to scrape a single domain and return formatted result.
+    
+    Args:
+        scraper: Initialized JobScraper instance
+        domain_url: Domain URL to scrape
+        company_name: Company name
+        
+    Returns:
+        Dictionary with domain, status, and jobs
+    """
+    try:
+        jobs = await scraper.scrape_domain(domain_url, company_name)
+        return {
+            "domain": domain_url,
+            "status": "success",
+            "jobs": jobs
+        }
+    except Exception as e:
+        logger.error("Error scraping %s: %s", domain_url, e)
+        return {
+            "domain": domain_url,
+            "status": "error",
+            "error": str(e),
+            "jobs": []
+        }
+
+
+@app.post("/scrape/stream")
+async def scrape_stream_endpoint(request: ScrapeRequest):
+    """
+    SSE endpoint that streams scraping results in real-time.
+    
+    Accepts a list of domains and streams each result as soon as it completes,
+    enabling parallel scraping without waiting for the full batch.
+    
+    Returns:
+        StreamingResponse with text/event-stream content type
+    """
+    logger.info("Starting streaming scrape for %d domains", len(request.domains))
+    return StreamingResponse(
+        stream_scrape(request.domains),
+        media_type="text/event-stream"
+    )
 
 
 @app.on_event("startup")
