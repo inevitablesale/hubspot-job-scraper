@@ -27,7 +27,10 @@ app = FastAPI(title="HubSpot Job Scraper Control")
 # CORS configuration - restrict in production
 # Set CORS_ORIGINS environment variable to restrict origins, e.g.:
 # CORS_ORIGINS=https://example.com,https://app.example.com
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
+cors_origins_env = os.getenv("CORS_ORIGINS", "*")
+CORS_ORIGINS = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+if not CORS_ORIGINS:
+    CORS_ORIGINS = ["*"]  # Default to allow all if empty
 
 # Add CORS middleware
 app.add_middleware(
@@ -65,6 +68,8 @@ async def stream_scrape(domains: List[str]):
         domain_map = {}  # Map tasks to domains for error handling
         for domain_url in domains:
             # Extract company name from domain using urlparse
+            # Note: This includes subdomains and ports. For cleaner company names,
+            # consider removing 'www.' prefix if needed in the scraper logic.
             company_name = urlparse(domain_url).netloc
             task = asyncio.create_task(scrape_domain_wrapper(scraper, domain_url, company_name))
             tasks.append(task)
@@ -79,7 +84,10 @@ async def stream_scrape(domains: List[str]):
             except Exception as e:
                 logger.error("[STREAM] Error processing domain: %s", e)
                 # Get the actual domain from the task map
-                failed_domain = domain_map.get(finished_task, "unknown")
+                failed_domain = domain_map.get(finished_task)
+                if not failed_domain:
+                    logger.warning("Could not determine domain for failed task")
+                    failed_domain = "unknown_domain"
                 error_result = {
                     "domain": failed_domain,
                     "status": "error",
