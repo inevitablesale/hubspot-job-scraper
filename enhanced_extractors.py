@@ -66,7 +66,10 @@ class MicrodataExtractor:
         """Get itemprop value from element."""
         item = element.find(attrs={"itemprop": prop})
         if item:
-            # Check for content attribute first
+            # For URL property, check href first (for anchor tags)
+            if prop in ('url', 'link') and item.name == 'a' and item.has_attr('href'):
+                return item['href']
+            # Check for content attribute
             if item.has_attr('content'):
                 return item['content']
             # Then check text content
