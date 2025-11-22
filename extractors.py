@@ -168,7 +168,7 @@ class JobExtractor:
                 return False
         
         # From problem statement: reject long titles without "apply" (likely blog posts)
-        # "if title.split() > 6 and not "apply" in page_text.lower(): reject"
+        # "if len(title.split()) > 6 and not 'apply' in page_text.lower(): reject"
         word_count = len(text.split())
         if word_count > 6 and "apply" not in text_lower:
             logger.debug("Rejecting long title without 'apply': %s", text)
