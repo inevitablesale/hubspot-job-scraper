@@ -12,5 +12,6 @@ COPY . /app
 # Ensure playwright browsers are already installed (they are in this image)
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Default command to run crawler
-CMD ["python", "main.py"]
+# Default command: run the web UI (control room)
+# Note: render.yaml overrides this with port binding
+CMD ["uvicorn", "control_room:app", "--host", "0.0.0.0", "--port", "8000"]

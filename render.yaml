@@ -4,7 +4,7 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    dockerCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    dockerCommand: uvicorn control_room:app --host 0.0.0.0 --port $PORT
     plan: starter
     envVars:
       - key: LOG_LEVEL

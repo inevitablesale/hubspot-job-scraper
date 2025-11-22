@@ -261,12 +261,25 @@ class JobScraper:
                 is_career = self.career_detector.is_career_page(normalized_url, html)
                 
                 if is_career:
-                    self.logger.info("Found career page: %s", normalized_url)
+                    self.logger.info(
+                        "🎯 Found career page",
+                        extra={"url": normalized_url, "depth": depth}
+                    )
                     # Extract jobs from this page
                     await self._extract_jobs_from_page(html, normalized_url, company_name, jobs_list)
                 else:
                     # Look for career links on non-career pages
                     career_links = self.career_detector.get_career_links(html, normalized_url)
+                    
+                    if career_links:
+                        self.logger.debug(
+                            "Found career link candidates",
+                            extra={
+                                "url": normalized_url,
+                                "candidates": career_links[:5],
+                                "count": len(career_links)
+                            }
+                        )
                     
                     # Recursively crawl career links
                     for career_link in career_links[:5]:  # Limit career links per page
@@ -304,16 +317,27 @@ class JobScraper:
             company_name: Company name
             jobs_list: List to append jobs to
         """
+        self.logger.debug(
+            "🔍 Scanning page for jobs",
+            extra={"url": page_url, "company": company_name}
+        )
+        
         # Check for "no jobs available" first
         if self.no_jobs_detector.has_no_jobs(html):
-            self.logger.info("Detected 'no jobs available' for %s", company_name)
+            self.logger.info(
+                "ℹ️  No jobs available on page",
+                extra={"company": company_name, "url": page_url}
+            )
             self.extraction_reporter.archive_html(page_url, html, success=True, jobs_found=0)
             return
 
         # Detect ATS
         ats_type = self.ats_detector.detect_ats(html, page_url)
         if ats_type:
-            self.logger.info("Detected ATS: %s", ats_type)
+            self.logger.info(
+                "🔌 Detected ATS system",
+                extra={"ats_type": ats_type, "url": page_url}
+            )
             await self._extract_from_ats(ats_type, page_url, company_name, jobs_list)
             return
 
@@ -424,8 +448,8 @@ class JobScraper:
             self.incremental_tracker.add_job(company_name, job_payload)
             jobs_added += 1
             
-            self.logger.info(
-                "Found job: %s - %s (score: %d, role: %s, source: %s)",
+            self.logger.debug(
+                "✓ Job matched filters: %s - %s (score: %d, role: %s, source: %s)",
                 company_name,
                 job_payload['title'],
                 job_payload['score'],
@@ -435,6 +459,26 @@ class JobScraper:
 
         # Archive HTML if enabled
         self.extraction_reporter.archive_html(page_url, html, success=jobs_added > 0, jobs_found=jobs_added)
+        
+        # Summary logging
+        if jobs_added > 0:
+            self.logger.info(
+                "📝 Jobs extracted from page",
+                extra={
+                    "url": page_url,
+                    "company": company_name,
+                    "raw_extractions": len(all_extracted_jobs),
+                    "filtered_jobs": jobs_added
+                }
+            )
+        else:
+            self.logger.debug(
+                "No qualifying jobs on page",
+                extra={
+                    "url": page_url,
+                    "raw_extractions": len(all_extracted_jobs)
+                }
+            )
 
     async def _extract_from_ats(
         self,
@@ -634,36 +678,102 @@ async def scrape_all_domains(domains_file: str) -> List[Dict]:
     Returns:
         List of all jobs found across all domains
     """
+    from datetime import datetime
+    
+    start_time = datetime.utcnow()
+    
     # Load domains
     domains = load_domains(domains_file)
     if not domains:
         logger.error("No domains loaded from %s", domains_file)
         return []
 
-    logger.info("Loaded %d domains to scrape", len(domains))
+    logger.info(
+        "📋 Starting crawl run",
+        extra={
+            "domains_count": len(domains),
+            "source": domains_file
+        }
+    )
 
     # Initialize scraper
     scraper = JobScraper()
     await scraper.initialize()
 
     all_jobs = []
+    success_count = 0
+    failed_count = 0
 
     try:
         # Scrape each domain
-        for domain_data in domains:
+        for idx, domain_data in enumerate(domains, 1):
             website = domain_data.get('website')
             company_name = domain_data.get('title', website)
 
             if not website:
+                logger.warning(
+                    "Skipping entry with no website",
+                    extra={"index": idx, "data": domain_data}
+                )
                 continue
 
-            jobs = await scraper.scrape_domain(website, company_name)
-            all_jobs.extend(jobs)
+            logger.info(
+                "🌐 Starting domain [%d/%d]",
+                idx,
+                len(domains),
+                extra={"domain": website, "company": company_name}
+            )
+
+            try:
+                jobs = await scraper.scrape_domain(website, company_name)
+                all_jobs.extend(jobs)
+                
+                if jobs:
+                    success_count += 1
+                    logger.info(
+                        "✅ Domain complete",
+                        extra={
+                            "domain": website,
+                            "jobs_found": len(jobs),
+                            "progress": f"{idx}/{len(domains)}"
+                        }
+                    )
+                else:
+                    logger.info(
+                        "ℹ️  Domain complete - no jobs found",
+                        extra={
+                            "domain": website,
+                            "progress": f"{idx}/{len(domains)}"
+                        }
+                    )
+            except Exception as e:
+                failed_count += 1
+                logger.error(
+                    "❌ Domain failed",
+                    extra={
+                        "domain": website,
+                        "error": str(e),
+                        "progress": f"{idx}/{len(domains)}"
+                    },
+                    exc_info=False
+                )
 
     finally:
         await scraper.shutdown()
-
-    logger.info("Scraping complete. Total jobs found: %d", len(all_jobs))
+    
+    duration = (datetime.utcnow() - start_time).total_seconds()
+    
+    logger.info(
+        "🏁 Crawl run completed",
+        extra={
+            "domains_total": len(domains),
+            "domains_success": success_count,
+            "domains_failed": failed_count,
+            "jobs_found": len(all_jobs),
+            "duration_seconds": round(duration, 2)
+        }
+    )
+    
     return all_jobs
 
 
