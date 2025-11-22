@@ -82,18 +82,8 @@ class TestFalsePositives(unittest.TestCase):
         extractor = AnchorExtractor("https://example.com")
         jobs = extractor.extract(html)
         
-        # Generic department categories are not job titles
-        # These might be extracted, but they should be very short and vague
-        # We'll filter them by requiring more specific job title patterns
-        for job in jobs:
-            # Job titles should be more specific than just "Marketing & Creative"
-            title_words = job['title'].split()
-            # If it's just 2-3 generic words, it's likely a category, not a job
-            if len(title_words) <= 3:
-                # Use the same TITLE_HINTS list to check for role words
-                has_role_word = any(word.lower() in TITLE_HINTS for word in title_words)
-                if not has_role_word:
-                    self.fail(f"Category '{job['title']}' should not be extracted as a job")
+        # Generic department categories should not be extracted as jobs
+        self.assertEqual(len(jobs), 0, "Department categories should not be extracted as jobs")
 
     def test_actual_jobs_are_extracted(self):
         """Verify that actual job postings are still extracted."""

@@ -44,17 +44,9 @@ TITLE_HINTS = [
     "opportunity",
 ]
 
-# Generic industry/department words that need additional validation
-GENERIC_KEYWORDS = [
-    "marketing",
-    "sales",
-    "support",
-    "product",
-    "engineering",
-    "design",
-    "creative",
-    "revenue",
-]
+# Pre-compile role keyword patterns for performance
+# Word boundaries ensure "engineer" matches "engineer" but not "engineering"
+ROLE_PATTERNS = [re.compile(r'\b' + re.escape(hint) + r'\b', re.IGNORECASE) for hint in TITLE_HINTS]
 
 # Patterns that indicate this is NOT a job title
 # Pre-compiled for performance since they're checked frequently
@@ -149,21 +141,12 @@ class JobExtractor:
             if pattern.search(text_lower):
                 return False
         
-        # Check for role-specific keywords using word boundaries
-        # This ensures "engineer" matches "engineer" but not "engineering"
-        has_role_keyword = False
-        for hint in TITLE_HINTS:
-            # Use word boundary to ensure exact word match
-            if re.search(r'\b' + re.escape(hint) + r'\b', text_lower):
-                has_role_keyword = True
-                break
+        # Check for role-specific keywords using pre-compiled patterns
+        # Word boundaries ensure "engineer" matches "engineer" but not "engineering"
+        for pattern in ROLE_PATTERNS:
+            if pattern.search(text_lower):
+                return True
         
-        # If it has a role keyword, it's likely a job
-        if has_role_keyword:
-            return True
-        
-        # For generic keywords alone (without role keywords), reject
-        # These are typically department names or categories, not job titles
         return False
 
     def _dedupe_job(self, title: str, url: Optional[str]) -> bool:
