@@ -451,6 +451,20 @@ async def api_stop_crawl():
     })
 
 
+@app.get("/api/system/summary")
+async def get_system_summary():
+    """
+    Get current system summary including crawler state and metrics.
+    
+    This endpoint provides the high-level overview used by the control room dashboard.
+    Returns the same data as /status but with /api prefix for consistency.
+    
+    Returns:
+        JSON with state, metrics, and timing info
+    """
+    return JSONResponse(content=crawl_status.to_dict())
+
+
 @app.get("/logs")
 async def get_logs(lines: int = 100):
     """
@@ -467,10 +481,40 @@ async def get_logs(lines: int = 100):
     return JSONResponse(content={"logs": recent_logs})
 
 
+@app.get("/api/logs")
+async def get_logs_api(limit: int = 100):
+    """
+    Get recent log entries (API endpoint with /api prefix).
+    
+    Args:
+        limit: Number of recent lines to return (max 500)
+        
+    Returns:
+        JSON array of log entries
+    """
+    limit = min(limit, 500)
+    recent_logs = list(crawl_status.log_buffer)[-limit:]
+    return JSONResponse(content={"logs": recent_logs})
+
+
 @app.get("/jobs")
 async def get_jobs():
     """
     Get recent job results.
+    
+    Returns:
+        JSON array of recent jobs
+    """
+    return JSONResponse(content={
+        "jobs": crawl_status.recent_jobs,
+        "count": len(crawl_status.recent_jobs)
+    })
+
+
+@app.get("/api/jobs")
+async def get_jobs_api():
+    """
+    Get recent job results (API endpoint with /api prefix).
     
     Returns:
         JSON array of recent jobs
