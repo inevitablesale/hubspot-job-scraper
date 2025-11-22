@@ -78,7 +78,7 @@ Role Scoring → Company Health Analysis → Job Payloads → Notifications (ntf
 
 **Crawl Intelligence**
 - Strict domain confinement
-- Comprehensive blacklist (38 domains, 43 business categories)
+- Comprehensive blacklist (31 domains, 43 business categories)
 - Blocks social media, publishing platforms, HubSpot ecosystem, analytics domains
 - Prevents crawling irrelevant local SMBs (restaurants, gyms, retail, etc.)
 - Rate limiting (1s per domain default)
