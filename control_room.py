@@ -49,6 +49,8 @@ class CrawlStatus:
         self.last_error: Optional[str] = None
         self.recent_jobs: List[Dict] = []
         self.log_buffer: deque = deque(maxlen=500)  # Keep last 500 log lines
+        self.paused: bool = False
+        self.stop_requested: bool = False
     
     def reset_run(self):
         """Reset run-specific metrics."""
@@ -56,6 +58,8 @@ class CrawlStatus:
         self.jobs_found = 0
         self.last_error = None
         self.recent_jobs = []
+        self.paused = False
+        self.stop_requested = False
     
     def to_dict(self) -> Dict:
         """Convert status to dictionary."""
@@ -66,7 +70,8 @@ class CrawlStatus:
             "domains_total": self.domains_total,
             "domains_processed": self.domains_processed,
             "jobs_found": self.jobs_found,
-            "last_error": self.last_error
+            "last_error": self.last_error,
+            "paused": self.paused
         }
 
 
@@ -152,8 +157,22 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
             domains = load_domains(domains_file)
             crawl_status.domains_total = len(domains)
             
+            # Check if stop was requested before starting
+            if crawl_status.stop_requested:
+                crawl_status.state = CrawlerState.IDLE
+                crawl_status.last_run_finished_at = datetime.utcnow().isoformat() + "Z"
+                logger.info("Crawl stopped before starting")
+                return
+            
             # Run scraper
             jobs = await run_scraper()
+            
+            # Check if stop was requested during execution
+            if crawl_status.stop_requested:
+                crawl_status.state = CrawlerState.IDLE
+                crawl_status.last_run_finished_at = datetime.utcnow().isoformat() + "Z"
+                logger.info("Crawl stopped by user request")
+                return
             
             # Update status
             crawl_status.jobs_found = len(jobs)
@@ -300,6 +319,136 @@ async def start_crawl(
         "status": "started",
         "message": "Crawl initiated in background"
     }
+
+
+@app.post("/api/crawl/start")
+async def api_start_crawl(
+    request: Optional[StartCrawlRequest] = None,
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """
+    Start a new crawl run (API endpoint for frontend).
+    
+    Args:
+        request: Optional crawl configuration
+        background_tasks: FastAPI background tasks
+        
+    Returns:
+        JSON confirmation that crawl started
+    """
+    # Check if already running
+    if crawl_status.state == CrawlerState.RUNNING:
+        return JSONResponse(content={
+            "ok": False,
+            "reason": "already_running",
+            "message": "Crawler is already running"
+        })
+    
+    # Extract params
+    role_filter = None
+    remote_only = None
+    if request:
+        role_filter = request.role_filter
+        remote_only = request.remote_only
+    
+    # Start background task
+    background_tasks.add_task(
+        run_scraper_background,
+        role_filter=role_filter,
+        remote_only=remote_only
+    )
+    
+    logger.info("Crawl start requested from UI (API endpoint)")
+    
+    return JSONResponse(content={
+        "ok": True,
+        "message": "Crawl started successfully"
+    })
+
+
+@app.post("/api/crawl/pause")
+async def api_pause_crawl():
+    """
+    Pause the currently running crawl.
+    
+    Note: The pause flag is set but not currently checked during scraper execution.
+    This provides the API contract for future enhancement.
+    
+    Returns:
+        JSON confirmation that pause was requested
+    """
+    if crawl_status.state != CrawlerState.RUNNING:
+        return JSONResponse(content={
+            "ok": False,
+            "reason": "not_running",
+            "message": "Crawler is not running"
+        })
+    
+    crawl_status.paused = True
+    logger.info("Crawl pause requested from UI")
+    
+    return JSONResponse(content={
+        "ok": True,
+        "message": "Pause requested"
+    })
+
+
+@app.post("/api/crawl/resume")
+async def api_resume_crawl():
+    """
+    Resume a paused crawl.
+    
+    Returns:
+        JSON confirmation that resume was requested
+    """
+    if crawl_status.state != CrawlerState.RUNNING:
+        return JSONResponse(content={
+            "ok": False,
+            "reason": "not_running",
+            "message": "Crawler is not running"
+        })
+    
+    if not crawl_status.paused:
+        return JSONResponse(content={
+            "ok": False,
+            "reason": "not_paused",
+            "message": "Crawler is not paused"
+        })
+    
+    crawl_status.paused = False
+    logger.info("Crawl resume requested from UI")
+    
+    return JSONResponse(content={
+        "ok": True,
+        "message": "Crawl resumed"
+    })
+
+
+@app.post("/api/crawl/stop")
+async def api_stop_crawl():
+    """
+    Stop the currently running crawl.
+    
+    Note: The stop flag is checked before and after scraper execution in run_scraper_background.
+    For immediate termination during execution, additional scraper changes would be needed.
+    
+    Returns:
+        JSON confirmation that stop was requested
+    """
+    if crawl_status.state != CrawlerState.RUNNING:
+        return JSONResponse(content={
+            "ok": False,
+            "reason": "not_running",
+            "message": "Crawler is not running"
+        })
+    
+    crawl_status.stop_requested = True
+    logger.info("Crawl stop requested from UI")
+    
+    return JSONResponse(content={
+        "ok": True,
+        "message": "Stop requested"
+    })
 
 
 @app.get("/logs")
