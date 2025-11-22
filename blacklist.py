@@ -82,7 +82,7 @@ BLACKLISTED_BUSINESS_CATEGORIES = {
 # Blacklisted external domains that should NEVER be crawled
 # These don't contain primary job postings and lead to irrelevant or infinite link trees
 BLACKLISTED_DOMAINS = {
-    # Social Media Platforms
+    # Social Media Platforms (from problem statement)
     "facebook.com",
     "fb.com",
     "messenger.com",
@@ -95,9 +95,9 @@ BLACKLISTED_DOMAINS = {
     "pinterest.com",
     "threads.net",
     "snapchat.com",
-    "medium.com",
     
     # Publishing Platforms
+    "medium.com",
     "substack.com",
     "blogger.com",
     "wordpress.com",
@@ -105,8 +105,18 @@ BLACKLISTED_DOMAINS = {
     "wixstatic.com",
     "squarespace.com",
     
-    # HubSpot Ecosystem (subdomains automatically blocked)
+    # HubSpot Ecosystem (from problem statement - subdomains automatically blocked)
     "hubspot.com",
+    "blog.hubspot.com",
+    "academy.hubspot.com",
+    
+    # Generic Platforms (from problem statement - always external)
+    "canva.com",
+    "figma.com",
+    "notion.site",
+    "eventbrite.com",
+    "intercom.help",
+    "zendesk.com",
     
     # Analytics / Tracking (subdomains automatically blocked)
     "google.com",

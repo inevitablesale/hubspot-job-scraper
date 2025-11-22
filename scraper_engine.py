@@ -60,10 +60,10 @@ SKIP_DOMAINS = {
     "about:blank",
 }
 
-# Configuration
-MAX_PAGES_PER_DOMAIN = int(os.getenv("MAX_PAGES_PER_DOMAIN", "20"))
+# Configuration (from problem statement requirements)
+MAX_PAGES_PER_DOMAIN = int(os.getenv("MAX_PAGES_PER_DOMAIN", "12"))  # Set to 12 per requirements
 PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "30000"))  # milliseconds
-MAX_DEPTH = int(os.getenv("MAX_DEPTH", "3"))
+MAX_DEPTH = int(os.getenv("MAX_DEPTH", "2"))  # Set to 2 per requirements
 RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))  # seconds per domain
 ENABLE_HTML_ARCHIVE = os.getenv("ENABLE_HTML_ARCHIVE", "false").lower() == "true"
 HTML_ARCHIVE_DIR = Path(os.getenv("HTML_ARCHIVE_DIR", "/tmp/html_archive"))
@@ -134,6 +134,15 @@ class JobScraper:
     async def scrape_domain(self, domain_url: str, company_name: str) -> List[Dict]:
         """
         Scrape a single company domain for job postings.
+        
+        Enhanced logging as per problem statement:
+        - [DOMAIN] Starting discovery...
+        - [DISCOVERY] Found potential careers link
+        - [SKIP] Footer/social link skipped / Header navigation ignored
+        - [CAREERS] Navigating to
+        - [JOB] Title: ... Source: ...
+        - [ATS] Detection messages
+        - [COMPLETE] Domain: ... | Jobs found: ...
 
         Args:
             domain_url: The company's website URL
@@ -142,7 +151,9 @@ class JobScraper:
         Returns:
             List of job dicts found on this domain
         """
-        self.logger.info("Starting scrape for %s (%s)", company_name, domain_url)
+        # Enhanced logging per requirements
+        self.logger.info("[DOMAIN] Starting discovery...")
+        self.logger.info(f"Root URL: {domain_url}")
         
         # Reset per-domain state
         self.visited_urls.clear()
@@ -155,7 +166,8 @@ class JobScraper:
         except Exception as e:
             self.logger.error("Error scraping domain %s: %s", domain_url, e)
 
-        self.logger.info("Found %d jobs for %s", len(domain_jobs), company_name)
+        # Enhanced completion logging per requirements
+        self.logger.info(f"[COMPLETE] Domain: {domain_url} | Jobs found: {len(domain_jobs)}")
         
         # Analyze hiring trends and generate health signals
         changes = self.incremental_tracker.get_changes(company_name)
@@ -265,12 +277,15 @@ class JobScraper:
                 is_career = self.career_detector.is_career_page(normalized_url, html)
                 
                 if is_career:
-                    self.logger.info(
-                        "🎯 Found career page",
-                        extra={"url": normalized_url, "depth": depth}
-                    )
+                    # Enhanced logging per requirements
+                    self.logger.info(f"[CAREERS] Navigating to: {normalized_url}")
+                    
                     # Extract jobs from this page
                     await self._extract_jobs_from_page(html, normalized_url, company_name, jobs_list)
+                    
+                    # IMPORTANT: Stop crawling once career page is found (per requirements)
+                    # This prevents unnecessary deep crawling
+                    return
                 else:
                     # Look for career links on non-career pages
                     career_links = self.career_detector.get_career_links(html, normalized_url)
@@ -294,6 +309,9 @@ class JobScraper:
                             depth + 1,
                             jobs_list
                         )
+                        # If we found jobs, stop crawling (per requirements)
+                        if jobs_list:
+                            return
                 
             finally:
                 await page.close()
@@ -338,10 +356,8 @@ class JobScraper:
         # Detect ATS
         ats_type = self.ats_detector.detect_ats(html, page_url)
         if ats_type:
-            self.logger.info(
-                "🔌 Detected ATS system",
-                extra={"ats_type": ats_type, "url": page_url}
-            )
+            # Enhanced logging per requirements
+            self.logger.info(f"[ATS] {ats_type} detected. Scraping via embedded jobs list.")
             await self._extract_from_ats(ats_type, page_url, company_name, jobs_list)
             return
 
@@ -451,6 +467,11 @@ class JobScraper:
             jobs_list.append(job_payload)
             self.incremental_tracker.add_job(company_name, job_payload)
             jobs_added += 1
+            
+            # Enhanced logging per requirements (single line for better log parsing)
+            self.logger.info(
+                f"[JOB] Title: {job_payload['title']} | Source: {job_payload['extraction_source']}"
+            )
             
             self.logger.debug(
                 "✓ Job matched filters: %s - %s (score: %d, role: %s, source: %s)",

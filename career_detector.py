@@ -13,7 +13,7 @@ from blacklist import DomainBlacklist
 
 logger = logging.getLogger(__name__)
 
-# URL path hints that suggest a career page
+# URL path hints that suggest a career page (from problem statement)
 CAREER_PATH_HINTS = [
     "career",
     "careers",
@@ -28,6 +28,7 @@ CAREER_PATH_HINTS = [
     "work-for-us",
     "opportunities",
     "open-positions",
+    "open-roles",
     "openings",
     "apply",
     "team",
@@ -38,7 +39,18 @@ CAREER_PATH_HINTS = [
     "work-here",
 ]
 
-# Content hints that suggest a career page
+# Invalid page patterns that should be EXCLUDED from career detection
+INVALID_CAREER_PATHS = [
+    "/blog",
+    "/resources",
+    "/insights",
+    "/news",
+    "/events",
+    "/contact",
+    "/about-us",
+]
+
+# Content hints that suggest a career page (from problem statement)
 CAREER_CONTENT_HINTS = [
     "open positions",
     "job openings",
@@ -54,6 +66,16 @@ CAREER_CONTENT_HINTS = [
     "employment opportunities",
     "become part of",
     "join us",
+]
+
+# Link text patterns for career links (from problem statement)
+CAREER_LINK_TEXT_PATTERNS = [
+    "careers",
+    "jobs",
+    "we're hiring",
+    "join our team",
+    "open positions",
+    "work with us",
 ]
 
 # Known ATS (Applicant Tracking System) domains
@@ -111,6 +133,14 @@ class CareerPageDetector:
             path = parsed.path.lower()
             query = parsed.query.lower()
 
+            # Check for invalid paths first (from problem statement)
+            for invalid_path in INVALID_CAREER_PATHS:
+                if path == invalid_path or path.startswith(invalid_path + "/"):
+                    # Only exclude if it doesn't also have career indicators
+                    combined = f"{path} {query}"
+                    if not any(hint in combined for hint in CAREER_PATH_HINTS):
+                        return False
+
             # Check path and query for career hints
             combined = f"{path} {query}"
             return any(hint in combined for hint in CAREER_PATH_HINTS)
@@ -151,12 +181,10 @@ class CareerPageDetector:
         """
         Extract links from a page that might lead to career pages.
         
-        Filters out blacklisted domains to avoid following links to:
-        - Social media platforms
-        - Publishing platforms
-        - HubSpot ecosystem domains
-        - Analytics/tracking domains
-        - Other irrelevant external sites
+        Filters out:
+        - Blacklisted domains (social media, HubSpot ecosystem, etc.)
+        - Header and footer links unless they match career keywords
+        - Invalid page patterns (/blog, /resources, etc.)
 
         Args:
             html_content: HTML content to analyze
@@ -171,28 +199,75 @@ class CareerPageDetector:
         career_links = []
         soup = BeautifulSoup(html_content, 'lxml')
 
+        # Find header and footer elements for filtering
+        header_elements = soup.find_all(['header', 'nav'])
+        footer_elements = soup.find_all('footer')
+        
+        # Track all links and header/footer links separately
+        all_links = []
+        header_footer_link_count = 0
+
         for anchor in soup.find_all('a', href=True):
             href = anchor.get('href')
             text = anchor.get_text().strip().lower()
             title = anchor.get('title', '').lower()
+            
+            # Skip javascript and mailto links
+            if href.startswith(('javascript:', 'mailto:', '#')):
+                continue
 
+            # Resolve relative URLs
+            full_url = urljoin(base_url, href)
+            all_links.append(full_url)
+            
+            # Check if link is in header or footer
+            is_in_header_footer = False
+            for parent in anchor.parents:
+                if parent in header_elements or parent in footer_elements:
+                    is_in_header_footer = True
+                    header_footer_link_count += 1
+                    break
+            
             # Combine text sources
             combined = f"{text} {title}"
 
             # Check if link text or href suggests careers
-            if any(hint in combined for hint in CAREER_PATH_HINTS) or \
-               any(hint in href.lower() for hint in CAREER_PATH_HINTS):
+            has_career_keyword = (
+                any(hint in combined for hint in CAREER_PATH_HINTS) or
+                any(hint in href.lower() for hint in CAREER_PATH_HINTS) or
+                any(pattern in combined for pattern in CAREER_LINK_TEXT_PATTERNS)
+            )
+            
+            # Skip header/footer links unless they have career keywords
+            if is_in_header_footer and not has_career_keyword:
+                self.logger.debug("[SKIP] Header/footer link ignored: %s", full_url)
+                continue
                 
-                # Resolve relative URLs
-                full_url = urljoin(base_url, href)
+            # Only process if it has career indicators
+            if has_career_keyword:
+                # Check for invalid paths (exact match or proper path segment)
+                parsed_url = urlparse(full_url)
+                path = parsed_url.path.lower()
+                is_invalid = any(
+                    path == invalid or path.startswith(invalid + "/") 
+                    for invalid in INVALID_CAREER_PATHS
+                )
                 
-                # Skip javascript and mailto links
-                if not full_url.startswith(('javascript:', 'mailto:', '#')):
-                    # Filter out blacklisted domains
-                    if not self.domain_blacklist.is_blacklisted_domain(full_url):
-                        career_links.append(full_url)
-                    else:
-                        self.logger.debug("Filtered blacklisted career link: %s", full_url)
+                if is_invalid:
+                    self.logger.debug("[SKIP] Invalid path pattern: %s", full_url)
+                    continue
+                
+                # Filter out blacklisted domains
+                if not self.domain_blacklist.is_blacklisted_domain(full_url):
+                    career_links.append(full_url)
+                    self.logger.debug("[DISCOVERY] Found potential careers link: %s", full_url)
+                else:
+                    self.logger.debug("[SKIP] Footer/social link skipped: %s", full_url)
+
+        # Heuristic: if 80%+ of links are from header/footer, consider page a "layout page"
+        if all_links and (header_footer_link_count / len(all_links)) >= 0.8:
+            self.logger.debug("Page is mostly header/footer links (%d/%d) - limiting deep crawl", 
+                            header_footer_link_count, len(all_links))
 
         self.logger.debug("Found %d potential career links", len(career_links))
         return career_links
