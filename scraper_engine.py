@@ -99,7 +99,12 @@ class JobScraper:
         playwright = await async_playwright().start()
         self.browser = await playwright.chromium.launch(
             headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox']
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+            ]
         )
         self.logger.info("Browser initialized")
 

@@ -7,7 +7,7 @@ set -e  # Exit on error
 echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
-echo "Installing Playwright browsers with system dependencies..."
-playwright install --with-deps chromium
+echo "Installing Playwright browsers..."
+playwright install chromium
 
 echo "Build complete!"
