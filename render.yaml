@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: hubspot-job-scraper
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: LOG_LEVEL
+        value: INFO
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"

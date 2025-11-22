@@ -114,6 +114,8 @@ docker run -e DOMAINS_FILE=/app/my_domains.json \
 
 This eliminates browser installation issues and includes all required dependencies.
 
+**Deploying to Render:** The repository includes a `render.yaml` file that automatically configures Render to use Docker deployment. This ensures Playwright browsers are pre-installed and eliminates "Executable doesn't exist" errors. See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed instructions.
+
 ### Local Development
 
 ```bash
