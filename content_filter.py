@@ -58,6 +58,19 @@ BLACKLISTED_DOMAINS = {
     'substack.com',
 }
 
+# Precompute domain variants for O(1) lookup performance
+# For each domain, add both the domain and www.domain version
+_BLACKLISTED_DOMAINS_SET = set()
+for domain in BLACKLISTED_DOMAINS:
+    _BLACKLISTED_DOMAINS_SET.add(domain)
+    _BLACKLISTED_DOMAINS_SET.add(f'www.{domain}')
+    # Also add parent domain parts for subdomain matching
+    parts = domain.split('.')
+    if len(parts) >= 2:
+        # Add base domain (e.g., 'hubspot.com' from 'blog.hubspot.com')
+        base = '.'.join(parts[-2:])
+        _BLACKLISTED_DOMAINS_SET.add(base)
+
 # CSS classes/IDs that indicate job containers (positive patterns)
 JOB_CONTAINER_PATTERNS = [
     r'job[s]?[-_]',
@@ -69,6 +82,9 @@ JOB_CONTAINER_PATTERNS = [
 
 # Compile job container patterns for performance
 JOB_CONTAINER_REGEX = [re.compile(pattern, re.IGNORECASE) for pattern in JOB_CONTAINER_PATTERNS]
+
+# Data attributes that indicate job-related content (from ATS systems and job widgets)
+JOB_DATA_ATTRIBUTES = ['data-ats', 'data-job', 'data-position', 'data-opening']
 
 
 class ContentFilter:
@@ -149,9 +165,10 @@ class ContentFilter:
             if self._has_job_container_class(parent):
                 return True
             
-            # Also check for data attributes like data-ats, data-job
-            if parent.get('data-ats') or parent.get('data-job'):
-                return True
+            # Also check for data attributes (from ATS systems and job widgets)
+            for attr in JOB_DATA_ATTRIBUTES:
+                if parent.get(attr):
+                    return True
         
         return False
     
@@ -200,15 +217,19 @@ class ContentFilter:
         try:
             parsed = urlparse(url)
             
-            # Check domain blacklist
+            # Check domain blacklist with O(1) lookup using precomputed set
             host = parsed.netloc.lower()
-            if host.startswith('www.'):
-                host = host[4:]
             
-            # Check if host matches any blacklisted domain (exact or subdomain)
-            for blacklisted in BLACKLISTED_DOMAINS:
-                if host == blacklisted or host.endswith('.' + blacklisted):
-                    self.logger.debug("URL blocked - blacklisted domain: %s", url)
+            # Direct lookup in precomputed set
+            if host in _BLACKLISTED_DOMAINS_SET:
+                self.logger.debug("URL blocked - blacklisted domain: %s", url)
+                return True
+            
+            # Check for subdomains (e.g., blog.hubspot.com)
+            # Split host and check if any suffix matches a blacklisted domain
+            for domain in BLACKLISTED_DOMAINS:
+                if host.endswith('.' + domain):
+                    self.logger.debug("URL blocked - blacklisted subdomain: %s", url)
                     return True
             
             # Check path patterns
