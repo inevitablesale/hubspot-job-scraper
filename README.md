@@ -78,6 +78,9 @@ Role Scoring → Company Health Analysis → Job Payloads → Notifications (ntf
 
 **Crawl Intelligence**
 - Strict domain confinement
+- Comprehensive blacklist (38 domains, 43 business categories)
+- Blocks social media, publishing platforms, HubSpot ecosystem, analytics domains
+- Prevents crawling irrelevant local SMBs (restaurants, gyms, retail, etc.)
 - Rate limiting (1s per domain default)
 - Exponential backoff on failures
 - Robots.txt respect
@@ -243,6 +246,7 @@ Tests cover:
 
 ```
 ├── ats_detectors.py         # ATS detection and API integration
+├── blacklist.py              # Domain and business category blacklist rules
 ├── career_detector.py        # Career page detection logic
 ├── deduplication.py          # Cross-layer deduplication and tracking
 ├── enhanced_extractors.py    # Advanced extraction patterns
@@ -255,6 +259,7 @@ Tests cover:
 ├── main.py                   # Main entry point
 ├── run_spider.py             # Background worker entry point
 ├── server.py                 # FastAPI control room
+├── test_blacklist.py         # Blacklist tests
 ├── test_extractors.py        # Extractor tests
 ├── test_role_classifier.py   # Role classifier tests
 ├── tests/
