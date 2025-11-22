@@ -101,12 +101,27 @@ Role Scoring → Company Health Analysis → Job Payloads → Notifications (ntf
 
 ## Setup
 
+### Docker Deployment (Recommended for Production)
+
+The easiest way to deploy is using Docker with the official Playwright base image:
+
+```bash
+docker build -t hubspot-scraper .
+docker run -e DOMAINS_FILE=/app/my_domains.json \
+           -v $(pwd)/my_domains.json:/app/my_domains.json \
+           hubspot-scraper
+```
+
+This eliminates browser installation issues and includes all required dependencies.
+
+### Local Development
+
 ```bash
 pip install -r requirements.txt
 playwright install --with-deps chromium  # Install browser with system dependencies
 ```
 
-**Note:** Use `--with-deps` flag when deploying to cloud platforms like Render to ensure all required system dependencies are installed.
+**Note:** Use `--with-deps` flag when deploying to cloud platforms like Render to ensure all required system dependencies are installed. For production deployment on Render, use the Docker approach (see DEPLOYMENT.md).
 
 Your domains file must be a JSON array using either of these shapes:
 

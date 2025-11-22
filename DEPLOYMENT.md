@@ -1,28 +1,30 @@
 # Deployment Guide
 
-## Deploying to Render
+## Deploying to Render (Docker-based)
 
-This scraper is designed to run on Render as a web service with background job execution.
+This scraper is designed to run on Render as a Docker-based web service with background job execution.
 
 ### Setup Steps
 
 1. **Create a new Web Service** on Render
    - Connect your GitHub repository
    - Set the branch to deploy
+   - **Select "Docker" as the runtime environment**
 
-2. **Configure Build Command**
-   ```bash
-   ./build.sh
-   ```
+2. **Configure Build Settings**
+   Render will automatically detect the Dockerfile and build the image.
    
-   Or manually:
-   ```bash
-   pip install -r requirements.txt && playwright install --with-deps chromium
-   ```
+   No build command needed - the Dockerfile handles everything.
 
 3. **Configure Start Command**
+   For the web server (control room UI):
    ```bash
    uvicorn server:app --host 0.0.0.0 --port $PORT
+   ```
+   
+   For the standalone scraper:
+   ```bash
+   python main.py
    ```
 
 4. **Add Environment Variables**
@@ -39,9 +41,18 @@ This scraper is designed to run on Render as a web service with background job e
    - Mount it at `/etc/secrets/DOMAINS_FILE`
 
 6. **Deploy**
-   - Render will build and deploy your service
+   - Render will build the Docker image and deploy your service
    - Access the control room at your service URL
    - Click "Start Crawl" to begin scraping
+
+### Why Docker?
+
+This deployment uses the official Microsoft Playwright Python Docker image which:
+- **Pre-installs all browsers** (Chromium, Firefox, WebKit)
+- **Eliminates browser installation errors** ("Executable doesn't exist", "Please run playwright install")
+- **Includes all system dependencies** required for headless browser automation
+- **Works reliably** in Render's container runtime environment
+- **Reduces deployment complexity** - no need for custom build scripts
 
 ### Health Checks
 
@@ -49,9 +60,9 @@ Render will automatically ping `/health` or send `HEAD /` requests to check if y
 
 ### Resource Requirements
 
-- **Instance Type**: Starter or higher (needs headless Chrome)
-- **RAM**: At least 512MB (1GB recommended)
-- **Disk**: Default is sufficient
+- **Instance Type**: Starter or higher (Docker-based, includes all browser dependencies)
+- **RAM**: At least 512MB (1GB recommended for concurrent crawling)
+- **Disk**: Default is sufficient (browsers included in Docker image)
 
 ### Monitoring
 
@@ -59,12 +70,42 @@ Render will automatically ping `/health` or send `HEAD /` requests to check if y
 - Use the FastAPI control room UI for live log streaming
 - Check `/status` endpoint for crawler state
 
-## Running Locally
+## Running Locally with Docker
+
+1. **Build the Docker image:**
+   ```bash
+   docker build -t hubspot-scraper .
+   ```
+
+2. **Create a domains file:**
+   ```bash
+   cp example_domains.json my_domains.json
+   # Edit my_domains.json with your companies
+   ```
+
+3. **Run the scraper:**
+   ```bash
+   docker run -e DOMAINS_FILE=/app/my_domains.json \
+              -v $(pwd)/my_domains.json:/app/my_domains.json \
+              hubspot-scraper
+   ```
+   
+   Or with the web UI:
+   ```bash
+   docker run -p 8000:8000 \
+              -e DOMAINS_FILE=/app/my_domains.json \
+              -v $(pwd)/my_domains.json:/app/my_domains.json \
+              hubspot-scraper \
+              uvicorn server:app --host 0.0.0.0 --port 8000
+   ```
+   Then visit http://localhost:8000
+
+## Running Locally without Docker
 
 1. Install dependencies:
    ```bash
    pip install -r requirements.txt
-   playwright install --with-deps chromium
+   playwright install chromium
    ```
 
 2. Create a domains file:
@@ -75,7 +116,7 @@ Render will automatically ping `/health` or send `HEAD /` requests to check if y
 
 3. Run the scraper:
    ```bash
-   DOMAINS_FILE=my_domains.json python run_spider.py
+   DOMAINS_FILE=my_domains.json python main.py
    ```
 
    Or with the web UI:
@@ -86,14 +127,19 @@ Render will automatically ping `/health` or send `HEAD /` requests to check if y
 
 ## Troubleshooting
 
-### Browser Installation Issues
+### Docker-Based Deployment
 
-If Playwright browser fails to install:
-```bash
-playwright install --with-deps chromium
-```
+#### Browser Issues
+The Docker image includes pre-installed browsers. If you encounter browser-related errors:
+- Ensure you're using the official Playwright Docker image (specified in Dockerfile)
+- Verify the Dockerfile hasn't been modified
+- Check Render logs for any container startup errors
 
-**Note:** On Render and other cloud platforms, always use `--with-deps` flag to install required system dependencies.
+#### Build Failures
+If Docker build fails on Render:
+- Check that Dockerfile is in the repository root
+- Verify requirements.txt is valid
+- Review Render build logs for specific error messages
 
 ### Memory Issues
 
