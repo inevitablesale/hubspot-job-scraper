@@ -371,6 +371,9 @@ async def api_pause_crawl():
     """
     Pause the currently running crawl.
     
+    Note: The pause flag is set but not currently checked during scraper execution.
+    This provides the API contract for future enhancement.
+    
     Returns:
         JSON confirmation that pause was requested
     """
@@ -425,6 +428,9 @@ async def api_resume_crawl():
 async def api_stop_crawl():
     """
     Stop the currently running crawl.
+    
+    Note: The stop flag is checked before and after scraper execution in run_scraper_background.
+    For immediate termination during execution, additional scraper changes would be needed.
     
     Returns:
         JSON confirmation that stop was requested
