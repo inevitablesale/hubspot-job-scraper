@@ -141,6 +141,13 @@ async def pause_crawl():
     
     The crawler will pause after finishing the current domain.
     """
+    if not crawler_state.is_running():
+        return StartCrawlResponse(
+            ok=False,
+            reason="not_running",
+            message="Crawler is not running"
+        )
+    
     crawler_state.request_pause()
     
     logger.info("Crawl pause requested via API")
@@ -168,6 +175,20 @@ async def resume_crawl():
     
     The crawler will resume from the paused state.
     """
+    if not crawler_state.is_running():
+        return StartCrawlResponse(
+            ok=False,
+            reason="not_running",
+            message="Crawler is not running"
+        )
+    
+    if not crawler_state.is_paused():
+        return StartCrawlResponse(
+            ok=False,
+            reason="not_paused",
+            message="Crawler is not paused"
+        )
+    
     crawler_state.request_resume()
     
     logger.info("Crawl resume requested via API")

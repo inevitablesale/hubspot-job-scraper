@@ -124,10 +124,15 @@ class CrawlerState:
         """Check if crawler is currently running."""
         return self._state == "running"
     
+    def is_paused(self) -> bool:
+        """Check if crawler is currently paused."""
+        return self._pause_requested
+    
     def summary(self) -> CrawlSummary:
         """Get current crawl summary."""
         return CrawlSummary(
             state=self._state,
+            paused=self._pause_requested,
             last_run_started_at=self._last_run_started_at,
             last_run_finished_at=self._last_run_finished_at,
             domains_total=self._domains_total,

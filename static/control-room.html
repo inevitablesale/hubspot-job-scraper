@@ -1179,8 +1179,9 @@
         function updateDashboard(data) {
             // Update status pill
             const statusPill = document.getElementById('dashboard-status-pill');
-            statusPill.className = `status-pill status-${data.state}`;
-            statusPill.innerHTML = `<span class="pulse"></span><span>${data.state.charAt(0).toUpperCase() + data.state.slice(1)}</span>`;
+            const displayState = data.paused ? 'paused' : data.state;
+            statusPill.className = `status-pill status-${displayState}`;
+            statusPill.innerHTML = `<span class="pulse"></span><span>${displayState.charAt(0).toUpperCase() + displayState.slice(1)}</span>`;
             
             // Update last run
             if (data.last_run_started_at) {
@@ -1192,13 +1193,14 @@
             document.getElementById('dashboard-domains').textContent = data.domains_total || '—';
             document.getElementById('dashboard-jobs').textContent = data.jobs_found || '—';
             
-            // Update button states based on crawler state
+            // Update button states based on crawler state and paused flag
             const isRunning = data.state === 'running';
+            const isPaused = data.paused === true;
             const isIdle = data.state === 'idle' || data.state === 'finished' || data.state === 'error';
             
             document.getElementById('dashboard-start-btn').disabled = !isIdle;
-            document.getElementById('dashboard-pause-btn').disabled = !isRunning;
-            document.getElementById('dashboard-resume-btn').disabled = !isRunning;
+            document.getElementById('dashboard-pause-btn').disabled = !isRunning || isPaused;
+            document.getElementById('dashboard-resume-btn').disabled = !isRunning || !isPaused;
             document.getElementById('dashboard-stop-btn').disabled = isIdle;
             
             state.crawlerStatus = data.state;

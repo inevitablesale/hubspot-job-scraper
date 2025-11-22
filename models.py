@@ -29,6 +29,7 @@ class CrawlSummary(BaseModel):
     """Summary of the current crawl status and metrics."""
     
     state: CrawlState
+    paused: bool = False
     last_run_started_at: Optional[datetime] = None
     last_run_finished_at: Optional[datetime] = None
     domains_total: int = 0

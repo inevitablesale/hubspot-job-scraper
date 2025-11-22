@@ -9,3 +9,4 @@ env/
 .idea/
 test_domains.json
 *.log
+config.json
