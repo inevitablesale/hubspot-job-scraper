@@ -105,23 +105,16 @@ BLACKLISTED_DOMAINS = {
     "wixstatic.com",
     "squarespace.com",
     
-    # HubSpot Ecosystem
+    # HubSpot Ecosystem (subdomains automatically blocked)
     "hubspot.com",
-    "app.hubspot.com",
-    "blog.hubspot.com",
-    "help.hubspot.com",
-    "community.hubspot.com",
     
-    # Analytics / Tracking
+    # Analytics / Tracking (subdomains automatically blocked)
     "google.com",
-    "analytics.google.com",
     "gstatic.com",
     "doubleclick.net",
-    "tagmanager.google.com",
     
-    # Unrelated Major Domains
+    # Unrelated Major Domains (subdomains automatically blocked)
     "amazon.com",
-    "aws.amazon.com",
     "apple.com",
     "microsoft.com",
     "reddit.com",
