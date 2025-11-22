@@ -1,6 +1,10 @@
-// TypeScript type definitions matching the backend models
+/**
+ * TypeScript type definitions for the API
+ * 
+ * These types match the Pydantic models in the backend.
+ */
 
-export type CrawlState = "idle" | "running" | "stopping" | "error" | "finished";
+export type CrawlState = 'idle' | 'running' | 'stopping' | 'error' | 'finished';
 
 export interface CrawlSummary {
   state: CrawlState;
@@ -12,14 +16,15 @@ export interface CrawlSummary {
   errors_count: number;
 }
 
-export type EventLevel = "info" | "warning" | "error";
-export type EventType = 
-  | "domain_started"
-  | "domain_finished"
-  | "career_page_found"
-  | "job_extracted"
-  | "error"
-  | "log";
+export type EventLevel = 'info' | 'warning' | 'error';
+
+export type EventType =
+  | 'domain_started'
+  | 'domain_finished'
+  | 'career_page_found'
+  | 'job_extracted'
+  | 'error'
+  | 'log';
 
 export interface CrawlEvent {
   id: string;
@@ -31,17 +36,17 @@ export interface CrawlEvent {
   metadata: Record<string, any>;
 }
 
-export type LogLevel = "debug" | "info" | "warning" | "error";
+export type LogLevel = 'debug' | 'info' | 'warning' | 'error';
 
 export interface LogLine {
   ts: string;
   level: LogLevel;
   message: string;
   domain?: string;
-  source: "crawler" | "system";
+  source: 'crawler' | 'system';
 }
 
-export type RemoteType = "remote" | "hybrid" | "office";
+export type RemoteType = 'remote' | 'hybrid' | 'office';
 
 export interface JobItem {
   id: string;
@@ -67,7 +72,7 @@ export interface DomainItem {
 }
 
 export interface ConfigSettings {
-  dark_mode_default: "system" | "light" | "dark";
+  dark_mode_default: 'system' | 'light' | 'dark';
   max_pages_per_domain: number;
   max_depth: number;
   blacklist_domains: string[];
@@ -92,6 +97,11 @@ export interface ScreenshotInfo {
   step: number;
   timestamp: string;
   description?: string;
+}
+
+export interface StartCrawlRequest {
+  role_filter?: string;
+  remote_only?: boolean;
 }
 
 export interface StartCrawlResponse {
