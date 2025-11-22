@@ -19,6 +19,9 @@ from bs4 import BeautifulSoup, Tag
 
 logger = logging.getLogger(__name__)
 
+# Minimum length for a valid job title
+MIN_JOB_TITLE_LENGTH = 5
+
 # Keywords that suggest a link/button contains job titles or job pages
 # These are ROLE-SPECIFIC keywords that indicate actual job titles
 TITLE_HINTS = [
@@ -135,7 +138,7 @@ class JobExtractor:
 
     def _is_job_like(self, text: str) -> bool:
         """Check if text looks like a job title or job-related content."""
-        if not text or len(text.strip()) < 3:
+        if not text or len(text.strip()) < MIN_JOB_TITLE_LENGTH:
             return False
             
         text_lower = text.lower().strip()
@@ -146,7 +149,7 @@ class JobExtractor:
                 return False
         
         # Check for role-specific keywords using word boundaries
-        # This prevents "engineering" from matching "engineer"
+        # This ensures "engineer" matches "engineer" but not "engineering"
         has_role_keyword = False
         for hint in TITLE_HINTS:
             # Use word boundary to ensure exact word match
@@ -252,7 +255,7 @@ class AnchorExtractor(JobExtractor):
             title_attr = anchor.get('title', '')
 
             # Skip if text is too short to be a meaningful job title
-            if len(text) < 5:
+            if len(text) < MIN_JOB_TITLE_LENGTH:
                 continue
 
             # Combine text sources
@@ -284,7 +287,7 @@ class ButtonExtractor(JobExtractor):
             text = self._clean_text(button.get_text())
             
             # Skip if text is too short to be a meaningful job title
-            if len(text) < 5:
+            if len(text) < MIN_JOB_TITLE_LENGTH:
                 continue
             
             data_url = button.get('data-url') or button.get('data-href') or button.get('onclick', '')
@@ -405,7 +408,7 @@ class HeadingExtractor(JobExtractor):
                 text = self._clean_text(heading.get_text())
 
                 # Skip if text is too short to be a meaningful job title
-                if len(text) < 5:
+                if len(text) < MIN_JOB_TITLE_LENGTH:
                     continue
 
                 # Check if this looks like a job title
