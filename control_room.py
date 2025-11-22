@@ -190,8 +190,14 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
 async def index():
     """Serve the control room UI."""
     static_dir = Path(__file__).parent / "static"
-    index_file = static_dir / "index.html"
     
+    # Try to serve the new control room UI first
+    control_room_file = static_dir / "control-room.html"
+    if control_room_file.exists():
+        return FileResponse(control_room_file)
+    
+    # Fallback to old index.html
+    index_file = static_dir / "index.html"
     if index_file.exists():
         return FileResponse(index_file)
     
@@ -324,6 +330,52 @@ async def get_jobs():
         "jobs": crawl_status.recent_jobs,
         "count": len(crawl_status.recent_jobs)
     })
+
+
+@app.get("/domains")
+async def get_domains():
+    """
+    Get list of domains from the domains file.
+    
+    Returns:
+        JSON array of domains
+    """
+    try:
+        domains_file = get_domains_file()
+        from scraper_engine import load_domains
+        domains = load_domains(domains_file)
+        
+        # Format domains for display
+        domain_list = []
+        for domain in domains:
+            if isinstance(domain, dict):
+                domain_list.append({
+                    "website": domain.get("website", ""),
+                    "title": domain.get("title", ""),
+                    "category": domain.get("category", "Unknown"),
+                    "status": "Not scraped",
+                    "last_scraped": None
+                })
+            else:
+                domain_list.append({
+                    "website": domain,
+                    "title": domain,
+                    "category": "Unknown",
+                    "status": "Not scraped",
+                    "last_scraped": None
+                })
+        
+        return JSONResponse(content={
+            "domains": domain_list,
+            "count": len(domain_list)
+        })
+    except Exception as e:
+        logger.error(f"Failed to load domains: {e}")
+        return JSONResponse(content={
+            "domains": [],
+            "count": 0,
+            "error": str(e)
+        }, status_code=500)
 
 
 # Mount static files if directory exists
