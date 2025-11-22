@@ -125,6 +125,30 @@ Your domains file must be a JSON array using either of these shapes:
 3. Open the service URL (e.g., `https://<your-service>.onrender.com/`). The homepage shows status pills, metric cards, a live log console, and an ECharts "Live Pulse" chart.
 4. Click **Start Crawl** to POST to `/run`; watch the log stream and chart update via `/events`. Health checks can hit `/health` (or `HEAD /`).
 
+### Real-Time Streaming API (SSE)
+
+The service includes a real-time Server-Sent Events (SSE) endpoint for parallel job scraping:
+
+**POST /scrape/stream**
+
+Stream scraping results in real-time with parallel domain processing:
+
+```bash
+curl -N -X POST \
+  -H "Content-Type: application/json" \
+  --data '{"domains":["https://company1.com","https://company2.com"]}' \
+  http://localhost:8000/scrape/stream
+```
+
+Features:
+- **Parallel execution**: All domains scraped concurrently using `asyncio.as_completed()`
+- **Real-time streaming**: Results streamed immediately as each domain completes
+- **SSE format**: Standard Server-Sent Events (`data: {json}\n\n`)
+- **CORS enabled**: Works from browser frontends
+- **No batching**: First domain finished → first result sent
+
+See [SSE_ENDPOINT_DOCS.md](SSE_ENDPOINT_DOCS.md) for detailed API documentation, examples, and usage patterns.
+
 ## Running as a Background Worker (no UI)
 
 If you prefer a portless worker, use the simpler entrypoint:
