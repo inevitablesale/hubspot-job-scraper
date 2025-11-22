@@ -128,11 +128,10 @@ class TestDomainBlacklist(unittest.TestCase):
     
     def test_allowed_saas_company_domains(self):
         """Test that SaaS company domains are NOT blacklisted."""
-        # Note: zendesk.com is blacklisted per problem statement requirements
+        # Note: zendesk.com and mailchimp.com are blacklisted per problem statement requirements
         allowed_domains = [
             "https://slack.com/careers",
             "https://atlassian.com/jobs",
-            "https://mailchimp.com/jobs",
             "https://freshworks.com/careers",
         ]
         

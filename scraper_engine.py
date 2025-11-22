@@ -468,10 +468,19 @@ class JobScraper:
             self.incremental_tracker.add_job(company_name, job_payload)
             jobs_added += 1
             
-            # Enhanced logging per requirements (single line for better log parsing)
-            self.logger.info(
-                f"[JOB] Title: {job_payload['title']} | Source: {job_payload['extraction_source']}"
-            )
+            # Enhanced logging per requirements - full job details
+            title = job_payload.get("title")
+            url = job_payload.get("url") or job_payload.get("apply_url")
+            desc = job_payload.get("summary") or job_payload.get("description") or job_payload.get("body") or ""
+            
+            # Truncate descriptions for log readability
+            desc_snippet = (desc[:200] + "...") if len(desc) > 200 else desc
+            
+            self.logger.info("──────── JOB EXTRACTED ────────")
+            self.logger.info(f"📌 Title: {title}")
+            self.logger.info(f"🔗 URL: {url}")
+            self.logger.info(f"📝 Description: {desc_snippet}")
+            self.logger.info("────────────────────────────────")
             
             self.logger.debug(
                 "✓ Job matched filters: %s - %s (score: %d, role: %s, source: %s)",
