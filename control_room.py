@@ -6,6 +6,7 @@ Provides a modern UI and API endpoints for triggering and monitoring crawls.
 
 import asyncio
 import json
+import logging
 import os
 from collections import deque
 from datetime import datetime
