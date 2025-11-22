@@ -12,7 +12,12 @@ This scraper is designed to run on Render as a web service with background job e
 
 2. **Configure Build Command**
    ```bash
-   pip install -r requirements.txt && playwright install chromium
+   ./build.sh
+   ```
+   
+   Or manually:
+   ```bash
+   pip install -r requirements.txt && playwright install --with-deps chromium
    ```
 
 3. **Configure Start Command**
@@ -59,7 +64,7 @@ Render will automatically ping `/health` or send `HEAD /` requests to check if y
 1. Install dependencies:
    ```bash
    pip install -r requirements.txt
-   playwright install chromium
+   playwright install --with-deps chromium
    ```
 
 2. Create a domains file:
@@ -87,6 +92,8 @@ If Playwright browser fails to install:
 ```bash
 playwright install --with-deps chromium
 ```
+
+**Note:** On Render and other cloud platforms, always use `--with-deps` flag to install required system dependencies.
 
 ### Memory Issues
 
