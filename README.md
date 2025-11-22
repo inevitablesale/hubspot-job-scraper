@@ -103,8 +103,10 @@ Role Scoring → Company Health Analysis → Job Payloads → Notifications (ntf
 
 ```bash
 pip install -r requirements.txt
-playwright install chromium  # Install browser
+playwright install --with-deps chromium  # Install browser with system dependencies
 ```
+
+**Note:** Use `--with-deps` flag when deploying to cloud platforms like Render to ensure all required system dependencies are installed.
 
 Your domains file must be a JSON array using either of these shapes:
 
