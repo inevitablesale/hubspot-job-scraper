@@ -21,6 +21,22 @@ from bs4 import BeautifulSoup
 from career_detector import CareerPageDetector
 from extractors import MultiLayerExtractor
 from role_classifier import RoleClassifier
+from ats_detectors import ATSDetector, ATSFetcher
+from enhanced_extractors import (
+    MicrodataExtractor,
+    OpenGraphExtractor,
+    MetaTagExtractor,
+    JavaScriptDataExtractor,
+    CMSPatternExtractor,
+)
+from normalization import JobNormalizer, TitleClassifier
+from deduplication import JobDeduplicator, IncrementalTracker, CompanyHealthAnalyzer
+from extraction_utils import (
+    NoJobsDetector,
+    ExtractionReporter,
+    RateLimiter,
+    RobotsTxtChecker,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +61,32 @@ SKIP_DOMAINS = {
 MAX_PAGES_PER_DOMAIN = int(os.getenv("MAX_PAGES_PER_DOMAIN", "20"))
 PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "30000"))  # milliseconds
 MAX_DEPTH = int(os.getenv("MAX_DEPTH", "3"))
+RATE_LIMIT_DELAY = float(os.getenv("RATE_LIMIT_DELAY", "1.0"))  # seconds per domain
+ENABLE_HTML_ARCHIVE = os.getenv("ENABLE_HTML_ARCHIVE", "false").lower() == "true"
+HTML_ARCHIVE_DIR = Path(os.getenv("HTML_ARCHIVE_DIR", "/tmp/html_archive"))
+JOB_TRACKING_CACHE = Path(os.getenv("JOB_TRACKING_CACHE", ".job_tracking.json"))
 
 
 class JobScraper:
-    """Main scraper engine using Playwright."""
+    """Main scraper engine using Playwright with enterprise features."""
 
     def __init__(self):
         self.career_detector = CareerPageDetector()
         self.role_classifier = RoleClassifier()
+        self.ats_detector = ATSDetector()
+        self.ats_fetcher = ATSFetcher()
+        self.job_normalizer = JobNormalizer()
+        self.title_classifier = TitleClassifier()
+        self.job_deduplicator = JobDeduplicator()
+        self.no_jobs_detector = NoJobsDetector()
+        self.rate_limiter = RateLimiter(default_delay=RATE_LIMIT_DELAY)
+        self.robots_checker = RobotsTxtChecker()
+        self.extraction_reporter = ExtractionReporter(
+            archive_dir=HTML_ARCHIVE_DIR if ENABLE_HTML_ARCHIVE else None
+        )
+        self.incremental_tracker = IncrementalTracker(JOB_TRACKING_CACHE)
+        self.health_analyzer = CompanyHealthAnalyzer()
+        
         self.browser: Optional[Browser] = None
         self.visited_urls: Set[str] = set()
         self.job_cache: Set[str] = set()
@@ -70,7 +104,19 @@ class JobScraper:
         self.logger.info("Browser initialized")
 
     async def shutdown(self):
-        """Shutdown browser cleanly."""
+        """Shutdown browser cleanly and save tracking data."""
+        # Save incremental tracking cache
+        self.incremental_tracker.save_cache()
+        
+        # Log extraction summary
+        summary = self.extraction_reporter.get_extraction_summary()
+        self.logger.info(
+            "Extraction summary: %d total, %d successes, %d failures",
+            summary['total_extractions'],
+            summary['total_successes'],
+            summary['total_failures']
+        )
+        
         if self.browser:
             self.logger.info("Shutting down browser...")
             await self.browser.close()
@@ -101,6 +147,22 @@ class JobScraper:
             self.logger.error("Error scraping domain %s: %s", domain_url, e)
 
         self.logger.info("Found %d jobs for %s", len(domain_jobs), company_name)
+        
+        # Analyze hiring trends and generate health signals
+        changes = self.incremental_tracker.get_changes(company_name)
+        if changes['new'] or changes['removed'] or changes['updated']:
+            health_analysis = self.health_analyzer.analyze_hiring_trend(changes)
+            self.logger.info(
+                "Company health for %s: %s (%s)",
+                company_name,
+                health_analysis['trend'],
+                health_analysis['reason']
+            )
+            
+            # Attach health analysis to company metadata
+            for job in domain_jobs:
+                job['company_health'] = health_analysis
+        
         return domain_jobs
 
     async def _crawl_page(
@@ -145,9 +207,29 @@ class JobScraper:
             return
 
         # Check if internal to root domain
-        if not self._is_internal(normalized_url, root_domain):
-            self.logger.debug("Skipping external URL: %s", normalized_url)
+        if not self._is_internal_strict(normalized_url, root_domain):
+            # Check if it's an allowed ATS redirect
+            if self.ats_detector.is_allowed_ats_redirect(normalized_url):
+                self.logger.info("Following allowed ATS redirect: %s", normalized_url)
+            elif self.ats_detector.is_banned_redirect(normalized_url):
+                self.logger.info("Blocking banned redirect: %s", normalized_url)
+                return
+            else:
+                self.logger.debug("Skipping external URL: %s", normalized_url)
+                return
+
+        # Check robots.txt
+        can_crawl = await self.robots_checker.can_crawl(normalized_url)
+        if not can_crawl:
+            self.logger.debug("Blocked by robots.txt: %s", normalized_url)
             return
+
+        # Apply rate limiting
+        domain = urlparse(normalized_url).netloc
+        delay = self.rate_limiter.get_delay(domain)
+        if delay > 0:
+            self.logger.debug("Rate limiting: waiting %.1fs for %s", delay, domain)
+            await asyncio.sleep(delay)
 
         # Mark as visited
         self.visited_urls.add(normalized_url)
@@ -166,6 +248,9 @@ class JobScraper:
                 
                 # Get page content
                 html = await page.content()
+                
+                # Record success
+                self.rate_limiter.record_success(domain)
                 
                 # Check if this is a career page
                 is_career = self.career_detector.is_career_page(normalized_url, html)
@@ -193,8 +278,10 @@ class JobScraper:
 
         except PlaywrightTimeout:
             self.logger.warning("Timeout loading page: %s", normalized_url)
+            self.rate_limiter.record_failure(domain)
         except Exception as e:
             self.logger.warning("Error crawling page %s: %s", normalized_url, e)
+            self.rate_limiter.record_failure(domain)
 
     async def _extract_jobs_from_page(
         self,
@@ -204,7 +291,7 @@ class JobScraper:
         jobs_list: List[Dict]
     ):
         """
-        Extract jobs from a career page using multi-layer extraction.
+        Extract jobs from a career page using progressive fallback extraction.
 
         Args:
             html: HTML content
@@ -212,21 +299,93 @@ class JobScraper:
             company_name: Company name
             jobs_list: List to append jobs to
         """
-        # Use multi-layer extractor
-        extractor = MultiLayerExtractor(page_url)
-        extracted_jobs = extractor.extract_all(html)
+        # Check for "no jobs available" first
+        if self.no_jobs_detector.has_no_jobs(html):
+            self.logger.info("Detected 'no jobs available' for %s", company_name)
+            self.extraction_reporter.archive_html(page_url, html, success=True, jobs_found=0)
+            return
+
+        # Detect ATS
+        ats_type = self.ats_detector.detect_ats(html, page_url)
+        if ats_type:
+            self.logger.info("Detected ATS: %s", ats_type)
+            await self._extract_from_ats(ats_type, page_url, company_name, jobs_list)
+            return
+
+        # Progressive fallback extraction
+        all_extracted_jobs = []
+
+        # Layer 1: Structured data (highest priority)
+        try:
+            json_ld_extractor = MultiLayerExtractor(page_url).extractors[0]  # JSON-LD
+            jobs = json_ld_extractor.extract(html)
+            all_extracted_jobs.extend(jobs)
+            self.extraction_reporter.log_extraction_success('json_ld', page_url, len(jobs))
+        except Exception as e:
+            self.extraction_reporter.log_extractor_failure('json_ld', page_url, e)
+
+        # Layer 2: Enhanced structured extractors
+        for extractor_class, name in [
+            (MicrodataExtractor, 'microdata'),
+            (OpenGraphExtractor, 'opengraph'),
+            (MetaTagExtractor, 'meta_tags'),
+        ]:
+            try:
+                extractor = extractor_class(page_url)
+                jobs = extractor.extract(html)
+                all_extracted_jobs.extend(jobs)
+                self.extraction_reporter.log_extraction_success(name, page_url, len(jobs))
+            except Exception as e:
+                self.extraction_reporter.log_extractor_failure(name, page_url, e)
+
+        # Layer 3: JavaScript data
+        try:
+            js_extractor = JavaScriptDataExtractor(page_url)
+            jobs = js_extractor.extract(html)
+            all_extracted_jobs.extend(jobs)
+            self.extraction_reporter.log_extraction_success('javascript', page_url, len(jobs))
+        except Exception as e:
+            self.extraction_reporter.log_extractor_failure('javascript', page_url, e)
+
+        # Layer 4: CMS-specific patterns
+        try:
+            cms_extractor = CMSPatternExtractor(page_url)
+            jobs = cms_extractor.extract(html)
+            all_extracted_jobs.extend(jobs)
+            self.extraction_reporter.log_extraction_success('cms', page_url, len(jobs))
+        except Exception as e:
+            self.extraction_reporter.log_extractor_failure('cms', page_url, e)
+
+        # Layer 5: Standard multi-layer extractor (anchors, buttons, sections, headings)
+        try:
+            extractor = MultiLayerExtractor(page_url)
+            jobs = extractor.extract_all(html)
+            all_extracted_jobs.extend(jobs)
+            self.extraction_reporter.log_extraction_success('multi_layer', page_url, len(jobs))
+        except Exception as e:
+            self.extraction_reporter.log_extractor_failure('multi_layer', page_url, e)
 
         # Convert HTML to text for classification
         soup = BeautifulSoup(html, 'lxml')
         page_text = soup.get_text(separator=' ', strip=True)
 
-        # Process each extracted job
-        for job_data in extracted_jobs:
+        # Process and deduplicate jobs
+        jobs_added = 0
+        for job_data in all_extracted_jobs:
+            # Cross-layer deduplication
+            if self.job_deduplicator.is_duplicate(job_data, use_fuzzy=True):
+                continue
+
+            # Normalize job data
+            normalized_job = self._normalize_job(job_data, page_text)
+            if not normalized_job:
+                continue
+
             # Classify and score the job
-            classification = self.role_classifier.classify_and_score(page_text, job_data)
+            classification = self.role_classifier.classify_and_score(page_text, normalized_job)
             
             if not classification:
-                self.logger.debug("Job did not meet scoring threshold: %s", job_data.get('title'))
+                self.logger.debug("Job did not meet scoring threshold: %s", normalized_job.get('title'))
                 continue
 
             # Check role filters
@@ -239,38 +398,129 @@ class JobScraper:
             # Build complete job payload
             job_payload = {
                 "company": company_name,
-                "title": job_data.get('title', 'Unknown Title'),
-                "url": job_data.get('url') or page_url,  # Fallback to page URL if no specific job URL
-                "summary": job_data.get('summary', ''),
+                "title": normalized_job.get('title', 'Unknown Title'),
+                "url": normalized_job.get('url') or page_url,
+                "summary": normalized_job.get('summary', ''),
+                "location": normalized_job.get('location', ''),
                 "role": classification['role'],
                 "score": classification['score'],
                 "signals": classification['signals'],
                 "location_type": classification['location_type'],
                 "is_contract": classification.get('is_contract', False),
+                "department": normalized_job.get('department', 'other'),
+                "seniority": normalized_job.get('seniority', 'mid'),
+                "employment_type": normalized_job.get('employment_type', 'full_time'),
                 "timestamp": datetime.utcnow().isoformat() + 'Z',
                 "source_page": page_url,
+                "extraction_source": job_data.get('source', 'unknown'),
             }
 
-            # Deduplicate based on (title, url)
-            job_hash = self._get_job_hash(job_payload)
-            if job_hash in self.job_cache:
-                self.logger.debug("Duplicate job filtered: %s", job_payload['title'])
-                continue
-
-            self.job_cache.add(job_hash)
             jobs_list.append(job_payload)
+            self.incremental_tracker.add_job(company_name, job_payload)
+            jobs_added += 1
+            
             self.logger.info(
-                "Found job: %s - %s (score: %d, role: %s)",
+                "Found job: %s - %s (score: %d, role: %s, source: %s)",
                 company_name,
                 job_payload['title'],
                 job_payload['score'],
-                job_payload['role']
+                job_payload['role'],
+                job_payload['extraction_source']
             )
 
-    def _get_job_hash(self, job: Dict) -> str:
-        """Generate a hash for job deduplication."""
-        key = f"{job['title'].lower()}|{job['url']}"
-        return hashlib.sha256(key.encode()).hexdigest()
+        # Archive HTML if enabled
+        self.extraction_reporter.archive_html(page_url, html, success=jobs_added > 0, jobs_found=jobs_added)
+
+    async def _extract_from_ats(
+        self,
+        ats_type: str,
+        page_url: str,
+        company_name: str,
+        jobs_list: List[Dict]
+    ):
+        """Extract jobs from ATS API."""
+        identifier = self.ats_fetcher.extract_ats_identifier(page_url, ats_type)
+        if not identifier:
+            self.logger.warning("Could not extract ATS identifier from %s", page_url)
+            return
+
+        try:
+            if ats_type == "greenhouse":
+                jobs = await self.ats_fetcher.fetch_greenhouse_jobs(identifier)
+            elif ats_type == "lever":
+                jobs = await self.ats_fetcher.fetch_lever_jobs(identifier)
+            elif ats_type == "workable":
+                jobs = await self.ats_fetcher.fetch_workable_jobs(identifier)
+            else:
+                self.logger.warning("ATS type %s not supported yet", ats_type)
+                return
+
+            # Process ATS jobs
+            for job in jobs:
+                # Normalize
+                normalized_job = self._normalize_job(job, "")
+                
+                # Deduplicate
+                if self.job_deduplicator.is_duplicate(normalized_job):
+                    continue
+
+                jobs_list.append({
+                    **normalized_job,
+                    "company": company_name,
+                    "timestamp": datetime.utcnow().isoformat() + 'Z',
+                    "extraction_source": f"ats_{ats_type}",
+                })
+                self.incremental_tracker.add_job(company_name, normalized_job)
+
+            self.logger.info("Extracted %d jobs from %s ATS", len(jobs), ats_type)
+
+        except Exception as e:
+            self.logger.error("Failed to extract from ATS: %s", e)
+
+    def _normalize_job(self, job: Dict, context_text: str = "") -> Optional[Dict]:
+        """
+        Normalize job data.
+
+        Args:
+            job: Raw job dict
+            context_text: Context text for classification
+
+        Returns:
+            Normalized job dict or None
+        """
+        title = job.get('title', '')
+        if not title:
+            return None
+
+        # Normalize fields
+        normalized_title = self.job_normalizer.normalize_title(title)
+        location_data = self.job_normalizer.normalize_location(job.get('location', ''))
+        summary = self.job_normalizer.normalize_summary(job.get('summary', ''))
+        
+        # Classify title
+        title_classification = self.title_classifier.classify_title(normalized_title)
+        
+        # Detect employment type
+        text_for_analysis = f"{title} {summary} {context_text}"
+        employment_type = self.job_normalizer.normalize_employment_type(text_for_analysis)
+        
+        return {
+            'title': normalized_title,
+            'url': job.get('url'),
+            'summary': summary,
+            'location': location_data['raw'],
+            'location_type': location_data['type'],
+            'location_city': location_data['city'],
+            'location_state': location_data['state'],
+            'location_country': location_data['country'],
+            'department': title_classification['department'],
+            'seniority': title_classification['seniority'],
+            'employment_type': employment_type,
+            'is_technical': title_classification['is_technical'],
+            'is_leadership': title_classification['is_leadership'],
+            'is_hubspot_focused': title_classification['is_hubspot_focused'],
+            'source': job.get('source', 'unknown'),
+        }
 
     def _normalize_url(self, url: str) -> Optional[str]:
         """Normalize a URL."""
@@ -324,6 +574,46 @@ class JobScraper:
                 root_host = root_host[4:]
 
             return url_host == root_host or url_host.endswith('.' + root_host)
+
+        except Exception:
+            return False
+
+    def _is_internal_strict(self, url: str, root_domain: str) -> bool:
+        """
+        Strict domain confinement check.
+        
+        Enforces:
+        - Same domain only
+        - No query param explosions
+        - Blocks calendars/contact pages
+        """
+        # Basic domain check
+        if not self._is_internal(url, root_domain):
+            return False
+
+        try:
+            parsed = urlparse(url)
+            path = parsed.path.lower()
+            
+            # Block calendar pages
+            if any(blocked in path for blocked in ['/calendar', '/schedule', '/book']):
+                self.logger.debug("Blocking calendar page: %s", url)
+                return False
+            
+            # Block contact/support pages (unless they're career-related)
+            if any(blocked in path for blocked in ['/contact', '/support']):
+                if 'career' not in path and 'job' not in path:
+                    self.logger.debug("Blocking contact page: %s", url)
+                    return False
+            
+            # Limit query parameters to prevent explosion
+            if parsed.query:
+                params = parsed.query.split('&')
+                if len(params) > 5:
+                    self.logger.debug("Too many query params: %s", url)
+                    return False
+            
+            return True
 
         except Exception:
             return False
