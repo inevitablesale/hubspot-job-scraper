@@ -3,7 +3,9 @@ services:
     name: hubspot-job-scraper
     env: python
     plan: free
-    buildCommand: export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 && pip install --no-cache-dir -r requirements.txt
+    # Use the repo's postinstall script so the build step never shells two commands together.
+    buildCommand: ./postinstall.sh
+    # Start the FastAPI control server (exposes /run to trigger crawls and /events for logs).
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD

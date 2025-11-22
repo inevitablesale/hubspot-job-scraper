@@ -14,19 +14,16 @@ python main.py --domains-file domains.txt --output results.jsonl
 
 ## Render deployment
 
-Render expects a build command. The safest option is to leave it as the default:
+Render expects a build and start command. Use the repo defaults to avoid the "not a valid identifier" error:
 
 ```
-./postinstall.sh
+build: ./postinstall.sh
+start: uvicorn server:app --host 0.0.0.0 --port $PORT
 ```
 
-If you want Render to read the commands from code instead of the dashboard, drop this repo's `render.yaml` into your service; it sets the build command to:
+If you want Render to read the commands from code instead of the dashboard, drop this repo's `render.yaml` into your service; it points to the same build/start commands.
 
-```
-export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 && pip install --no-cache-dir -r requirements.txt
-```
-
-If you **must** inline the install, either set the variable as a prefix or add `&&` between commands:
+If you **must** inline the install in the Render dashboard, either set the variable as a prefix or add `&&` between commands:
 
 ```bash
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 pip install -r requirements.txt
