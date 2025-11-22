@@ -16,6 +16,7 @@ from typing import Dict, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup, Tag
+from content_filter import ContentFilter
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +120,7 @@ class JobExtractor:
     def __init__(self, base_url: str):
         self.base_url = base_url
         self.seen_jobs: Set[tuple] = set()
+        self.content_filter = ContentFilter()
 
     def _normalize_url(self, url: Optional[str]) -> Optional[str]:
         """Normalize and validate a URL."""
@@ -309,13 +311,19 @@ class AnchorExtractor(JobExtractor):
             # Skip if text is too short to be a meaningful job title
             if len(text) < MIN_JOB_TITLE_LENGTH:
                 continue
+            
+            # Normalize URL first for filtering
+            url = self._normalize_url(href)
+            
+            # Apply content filtering: skip header/footer/nav and blacklisted URLs
+            if not self.content_filter.should_extract_from_element(anchor, url):
+                continue
 
             # Combine text sources
             combined_text = f"{text} {title_attr}".lower()
 
             # Check if this looks like a job
             if self._is_job_like(combined_text) and text:
-                url = self._normalize_url(href)
                 job_data = {
                     'title': text,
                     'url': url,
@@ -344,6 +352,10 @@ class ButtonExtractor(JobExtractor):
             if len(text) < MIN_JOB_TITLE_LENGTH:
                 continue
             
+            # Apply content filtering: skip header/footer/nav
+            if not self.content_filter.should_extract_from_element(button):
+                continue
+            
             data_url = button.get('data-url') or button.get('data-href') or button.get('onclick', '')
 
             # Extract URL from onclick handlers
@@ -356,9 +368,15 @@ class ButtonExtractor(JobExtractor):
             # Check if this looks like a job
             if self._is_job_like(text) and text:
                 # Note: URL might be None for modal-based jobs
+                normalized_url = self._normalize_url(url) if url else None
+                
+                # Skip blacklisted URLs
+                if normalized_url and self.content_filter.is_blacklisted_url(normalized_url):
+                    continue
+                
                 job_data = {
                     'title': text,
-                    'url': self._normalize_url(url) if url else None,
+                    'url': normalized_url,
                     'summary': '',
                 }
                 # Apply safety validation and deduplication
@@ -422,6 +440,10 @@ class SectionExtractor(JobExtractor):
         # Try to find a link
         link = card.find('a', href=True)
         url = self._normalize_url(link.get('href')) if link else None
+        
+        # Skip blacklisted URLs
+        if url and self.content_filter.is_blacklisted_url(url):
+            return None
 
         # Extract title - prefer heading tags first
         title = None
@@ -468,6 +490,10 @@ class HeadingExtractor(JobExtractor):
                 # Skip if text is too short to be a meaningful job title
                 if len(text) < MIN_JOB_TITLE_LENGTH:
                     continue
+                
+                # Apply content filtering: skip header/footer/nav
+                if not self.content_filter.should_extract_from_element(heading):
+                    continue
 
                 # Check if this looks like a job title
                 if self._is_job_like(text) and text:
@@ -479,6 +505,10 @@ class HeadingExtractor(JobExtractor):
 
                     if link:
                         url = self._normalize_url(link.get('href'))
+                    
+                    # Skip blacklisted URLs
+                    if url and self.content_filter.is_blacklisted_url(url):
+                        continue
 
                     job_data = {
                         'title': text,

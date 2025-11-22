@@ -106,10 +106,8 @@ BLACKLISTED_DOMAINS = {
     "squarespace.com",
     "vimeo.com",
     
-    # HubSpot Ecosystem (from problem statement - subdomains automatically blocked)
+    # HubSpot Ecosystem (from problem statement - all subdomains blocked)
     "hubspot.com",
-    "blog.hubspot.com",
-    "academy.hubspot.com",
     
     # Generic Platforms (from problem statement - always external)
     "canva.com",
