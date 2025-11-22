@@ -153,9 +153,10 @@ async def pause_crawl():
     logger.info("Crawl pause requested via API")
     
     # Emit pause event
+    now = datetime.utcnow()
     await events_bus.publish(CrawlEvent(
-        id=f"evt_{datetime.utcnow().timestamp()}",
-        ts=datetime.utcnow(),
+        id=f"evt_{now.timestamp()}",
+        ts=now,
         level="info",
         type="log",
         message="Crawl pause requested",
@@ -194,9 +195,10 @@ async def resume_crawl():
     logger.info("Crawl resume requested via API")
     
     # Emit resume event
+    now = datetime.utcnow()
     await events_bus.publish(CrawlEvent(
-        id=f"evt_{datetime.utcnow().timestamp()}",
-        ts=datetime.utcnow(),
+        id=f"evt_{now.timestamp()}",
+        ts=now,
         level="info",
         type="log",
         message="Crawl resume requested",
