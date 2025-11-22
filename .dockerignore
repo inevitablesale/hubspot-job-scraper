@@ -33,7 +33,3 @@ htmlcov/
 test_domains.json
 *.log
 *.backup
-
-# Documentation (we want these in the image but listing here as reference)
-# README.md
-# DEPLOYMENT.md
