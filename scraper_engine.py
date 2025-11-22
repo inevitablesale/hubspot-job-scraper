@@ -626,7 +626,6 @@ class JobScraper:
 
             return any(host == sd or host.endswith('.' + sd) for sd in SKIP_DOMAINS)
 
-
         except Exception:
             return True
 
