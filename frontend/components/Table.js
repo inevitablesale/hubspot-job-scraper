@@ -4,6 +4,8 @@
  * Data table with sorting, filtering, and sticky headers.
  */
 
+import { escapeHtml } from './utils.js';
+
 export class Table {
     constructor(containerId, options = {}) {
         this.container = document.getElementById(containerId);
@@ -11,6 +13,7 @@ export class Table {
         this.data = options.data || [];
         this.sortColumn = null;
         this.sortDirection = 'asc';
+        this.instanceId = 'table_' + Math.random().toString(36).substr(2, 9);
     }
     
     setData(data) {
@@ -43,7 +46,7 @@ export class Table {
         if (!this.container) return;
         
         const headers = this.columns.map(col => `
-            <th onclick="table.sort('${col.key}')" style="cursor: pointer;">
+            <th data-sort-column="${col.key}" data-table-instance="${this.instanceId}" style="cursor: pointer;">
                 ${col.label}
                 ${this.sortColumn === col.key ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}
             </th>
@@ -52,7 +55,7 @@ export class Table {
         const rows = this.data.length > 0
             ? this.data.map(row => `
                 <tr>
-                    ${this.columns.map(col => `<td>${col.render ? col.render(row[col.key], row) : this.escape(row[col.key])}</td>`).join('')}
+                    ${this.columns.map(col => `<td>${col.render ? col.render(row[col.key], row) : escapeHtml(row[col.key])}</td>`).join('')}
                 </tr>
             `).join('')
             : `<tr><td colspan="${this.columns.length}" style="text-align: center; color: var(--text-secondary-dark);">No data available</td></tr>`;
@@ -67,12 +70,12 @@ export class Table {
                 </tbody>
             </table>
         `;
-    }
-    
-    escape(text) {
-        if (text === null || text === undefined) return '—';
-        const div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
+        
+        // Add click listeners for sorting
+        this.container.querySelectorAll(`th[data-table-instance="${this.instanceId}"]`).forEach(th => {
+            th.addEventListener('click', () => {
+                this.sort(th.dataset.sortColumn);
+            });
+        });
     }
 }

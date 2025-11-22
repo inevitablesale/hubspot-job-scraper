@@ -35,6 +35,10 @@
             --success: #16A34A;
             --warning: #F59E0B;
             --error: #DC2626;
+            
+            /* Interaction States */
+            --hover-bg-dark: rgba(255, 255, 255, 0.05);
+            --hover-bg-light: rgba(0, 0, 0, 0.05);
         }
         
         * {
@@ -114,7 +118,7 @@
         }
         
         .nav-item:hover {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--hover-bg-dark);
             color: var(--text-primary-dark);
         }
         
@@ -263,7 +267,7 @@
         }
         
         .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.05);
+            background: var(--hover-bg-dark);
         }
         
         .btn-danger {
@@ -415,7 +419,7 @@
         }
         
         tbody tr:hover {
-            background: rgba(255, 255, 255, 0.03);
+            background: var(--hover-bg-dark);
         }
         
         /* Modal */
@@ -564,6 +568,80 @@
         /* Hidden */
         .hidden {
             display: none;
+        }
+        
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        
+        .toast {
+            background: var(--panel-dark);
+            border: 1px solid var(--border-dark);
+            border-radius: 8px;
+            padding: 16px 20px;
+            min-width: 320px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+        
+        .toast.error {
+            border-left: 4px solid var(--error);
+        }
+        
+        .toast.info {
+            border-left: 4px solid var(--accent-dark);
+        }
+        
+        .toast-icon {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .toast-content {
+            flex: 1;
+        }
+        
+        .toast-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        
+        .toast-message {
+            font-size: 14px;
+            color: var(--text-secondary-dark);
+        }
+        
+        .toast-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary-dark);
+            cursor: pointer;
+            padding: 4px;
         }
         
         /* Responsive */
@@ -911,6 +989,9 @@
         </div>
     </div>
     
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+    
     <script>
         // Initialize Lucide icons
         lucide.createIcons();
@@ -1018,14 +1099,14 @@
                 });
                 
                 if (response.ok) {
-                    alert('Crawl started successfully');
+                    showToast('Crawl Started', 'The crawl has been initiated successfully', 'success');
                     fetchStatus();
                 } else {
                     const error = await response.json();
-                    alert(`Failed to start: ${error.detail}`);
+                    showToast('Failed to Start', error.detail || 'Unknown error', 'error');
                 }
             } catch (error) {
-                alert('Network error');
+                showToast('Network Error', 'Failed to connect to the server', 'error');
             }
         }
         
@@ -1075,20 +1156,28 @@
                 return;
             }
             
-            tbody.innerHTML = state.jobs.map(job => `
+            tbody.innerHTML = state.jobs.map((job, index) => `
                 <tr>
                     <td><strong>${escapeHtml(job.title)}</strong></td>
                     <td>${escapeHtml(job.company)}</td>
                     <td>${escapeHtml(job.location || 'Remote')}</td>
                     <td><span class="badge badge-blue">Remote</span></td>
                     <td>
-                        <button class="btn btn-secondary" onclick='viewJob(${JSON.stringify(job)})'>
+                        <button class="btn btn-secondary" data-job-index="${index}">
                             <i data-lucide="eye"></i>
                             View
                         </button>
                     </td>
                 </tr>
             `).join('');
+            
+            // Add event listeners to view buttons
+            tbody.querySelectorAll('button[data-job-index]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const index = parseInt(btn.dataset.jobIndex);
+                    viewJob(state.jobs[index]);
+                });
+            });
             
             lucide.createIcons();
         }
@@ -1122,7 +1211,7 @@
         });
         
         document.getElementById('log-download').addEventListener('click', () => {
-            alert('Download feature coming soon');
+            showToast('Coming Soon', 'Download feature will be available in the next update', 'info');
         });
         
         document.getElementById('job-search').addEventListener('input', (e) => {
@@ -1131,7 +1220,7 @@
         });
         
         document.getElementById('config-save').addEventListener('click', () => {
-            alert('Configuration saved');
+            showToast('Configuration Saved', 'Your settings have been updated', 'success');
         });
         
         // Drawer management
@@ -1168,6 +1257,39 @@
         // Modal management
         function closeModal() {
             document.querySelectorAll('.modal').forEach(m => m.classList.remove('active'));
+        }
+        
+        // Toast notification system
+        function showToast(title, message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const iconName = type === 'success' ? 'check-circle' : type === 'error' ? 'alert-circle' : 'info';
+            
+            toast.innerHTML = `
+                <i data-lucide="${iconName}" class="toast-icon"></i>
+                <div class="toast-content">
+                    <div class="toast-title">${escapeHtml(title)}</div>
+                    ${message ? `<div class="toast-message">${escapeHtml(message)}</div>` : ''}
+                </div>
+                <button class="toast-close">
+                    <i data-lucide="x"></i>
+                </button>
+            `;
+            
+            container.appendChild(toast);
+            lucide.createIcons();
+            
+            // Close on button click
+            toast.querySelector('.toast-close').addEventListener('click', () => {
+                toast.remove();
+            });
+            
+            // Auto-remove after 5 seconds
+            setTimeout(() => {
+                toast.remove();
+            }, 5000);
         }
         
         // Utilities

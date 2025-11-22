@@ -4,6 +4,8 @@
  * Terminal-like log viewer with color-coded output.
  */
 
+import { escapeHtml, downloadFile } from './utils.js';
+
 export class LogConsole {
     constructor(containerId, options = {}) {
         this.container = document.getElementById(containerId);
@@ -58,7 +60,7 @@ export class LogConsole {
         this.container.innerHTML = this.logs.map(log => {
             const time = log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : '';
             const level = (log.level || 'info').toLowerCase();
-            const message = this.escape(log.message || log);
+            const message = escapeHtml(log.message || log);
             
             return `<div class="log-line ${level}">${time ? `[${time}] ` : ''}${message}</div>`;
         }).join('');
@@ -66,12 +68,6 @@ export class LogConsole {
         if (this.autoScroll) {
             this.jumpToLatest();
         }
-    }
-    
-    escape(text) {
-        const div = document.createElement('div');
-        div.textContent = String(text);
-        return div.innerHTML;
     }
     
     download() {
@@ -82,12 +78,6 @@ export class LogConsole {
             return `${time} [${level}] ${message}`;
         }).join('\n');
         
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `logs-${new Date().toISOString()}.txt`;
-        a.click();
-        URL.revokeObjectURL(url);
+        downloadFile(content, `logs-${new Date().toISOString()}.txt`, 'text/plain');
     }
 }
