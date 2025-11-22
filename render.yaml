@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: hubspot-job-scraper
+    env: python
+    plan: free
+    # Use the repo's postinstall script so the build step never shells two commands together.
+    buildCommand: ./postinstall.sh
+    # Start the FastAPI control server (exposes /run to trigger crawls and /events for logs).
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD
+        value: "1"
+      - key: PLAYWRIGHT_BROWSER_CHANNEL
+        value: "chrome"
+      - key: PYTHON_VERSION
+        value: 3.13.4
