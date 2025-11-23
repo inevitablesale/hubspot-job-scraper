@@ -717,12 +717,14 @@ class JobScraper:
             return False
 
 
-async def scrape_all_domains(domains_file: str) -> List[Dict]:
+async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[Dict]:
     """
     Scrape all domains from a JSON file.
 
     Args:
         domains_file: Path to JSON file with domain list
+        progress_callback: Optional callback function called after each domain with
+                          (domain_idx, total_domains, jobs_from_domain, all_jobs_so_far)
 
     Returns:
         List of all jobs found across all domains
@@ -795,6 +797,11 @@ async def scrape_all_domains(domains_file: str) -> List[Dict]:
                             "progress": f"{idx}/{len(domains)}"
                         }
                     )
+                
+                # Call progress callback if provided
+                if progress_callback:
+                    await progress_callback(idx, len(domains), jobs, all_jobs)
+                    
             except Exception as e:
                 failed_count += 1
                 logger.error(
@@ -806,6 +813,10 @@ async def scrape_all_domains(domains_file: str) -> List[Dict]:
                     },
                     exc_info=False
                 )
+                
+                # Call progress callback even on failure
+                if progress_callback:
+                    await progress_callback(idx, len(domains), [], all_jobs)
 
     finally:
         await scraper.shutdown()
