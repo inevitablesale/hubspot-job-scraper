@@ -38,7 +38,7 @@ def get_domains_file() -> str:
     raise FileNotFoundError("Domains file not found")
 
 
-async def run_scraper(domains_file: Optional[str] = None) -> List[Dict]:
+async def run_scraper(domains_file: Optional[str] = None, progress_callback=None) -> List[Dict]:
     """
     Main scraper execution function.
     
@@ -46,6 +46,7 @@ async def run_scraper(domains_file: Optional[str] = None) -> List[Dict]:
     
     Args:
         domains_file: Path to domains JSON file. If None, uses environment/default.
+        progress_callback: Optional callback for real-time progress updates
         
     Returns:
         List of all jobs found across all domains
@@ -65,7 +66,7 @@ async def run_scraper(domains_file: Optional[str] = None) -> List[Dict]:
         logger.info("Using domains file: %s", domains_file)
 
         # Run the scraper
-        jobs = await scrape_all_domains(domains_file)
+        jobs = await scrape_all_domains(domains_file, progress_callback=progress_callback)
         
         duration = (datetime.utcnow() - start_time).total_seconds()
 

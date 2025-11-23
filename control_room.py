@@ -122,6 +122,21 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
         role_filter: Optional role filter (comma-separated)
         remote_only: Optional remote-only filter
     """
+    
+    async def progress_update(domain_idx: int, total_domains: int, jobs_from_domain: List[Dict], all_jobs: List[Dict]):
+        """
+        Progress callback to update state in real-time.
+        
+        Args:
+            domain_idx: Current domain index (1-based)
+            total_domains: Total number of domains
+            jobs_from_domain: Jobs found from current domain
+            all_jobs: All jobs found so far
+        """
+        crawl_status.domains_processed = domain_idx
+        crawl_status.jobs_found = len(all_jobs)
+        crawl_status.recent_jobs = all_jobs[-50:]  # Keep last 50
+    
     try:
         # Update state
         crawl_status.state = CrawlerState.RUNNING
@@ -164,8 +179,8 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
                 logger.info("Crawl stopped before starting")
                 return
             
-            # Run scraper
-            jobs = await run_scraper()
+            # Run scraper with progress callback
+            jobs = await run_scraper(progress_callback=progress_update)
             
             # Check if stop was requested during execution
             if crawl_status.stop_requested:
