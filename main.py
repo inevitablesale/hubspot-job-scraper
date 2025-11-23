@@ -34,15 +34,6 @@ def get_domains_file() -> str:
     if RENDER_SECRET_DATASET.exists():
         return str(RENDER_SECRET_DATASET)
 
-    # Fallback to example_domains.json for demo/testing
-    example_file = Path(__file__).parent / "example_domains.json"
-    if example_file.exists():
-        logger.warning(
-            "Using example_domains.json as fallback. "
-            "Set DOMAINS_FILE env var or mount at /etc/secrets/DOMAINS_FILE for production."
-        )
-        return str(example_file)
-
     logger.error("No domains file found. Set DOMAINS_FILE env var or mount at /etc/secrets/DOMAINS_FILE")
     raise FileNotFoundError("Domains file not found")
 
