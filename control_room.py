@@ -189,9 +189,9 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
                 logger.info("Crawl stopped by user request")
                 return
             
-            # Update status
+            # Update status (final values, redundant with progress_update but ensures correctness)
             crawl_status.jobs_found = len(jobs)
-            crawl_status.recent_jobs = jobs[:50]  # Keep last 50
+            crawl_status.recent_jobs = jobs[-50:]  # Keep last 50
             crawl_status.state = CrawlerState.COMPLETED
             crawl_status.last_run_finished_at = datetime.utcnow().isoformat() + "Z"
             
