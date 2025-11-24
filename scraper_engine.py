@@ -39,7 +39,7 @@ from extraction_utils import (
 )
 from blacklist import DomainBlacklist
 from logging_config import get_logger
-from db_service import DatabaseService
+from supabase_persistence import save_jobs_for_domain
 
 logger = get_logger(__name__)
 
@@ -91,7 +91,6 @@ class JobScraper:
         self.incremental_tracker = IncrementalTracker(JOB_TRACKING_CACHE)
         self.health_analyzer = CompanyHealthAnalyzer()
         self.domain_blacklist = DomainBlacklist()
-        self.db_service = DatabaseService()
         
         self.browser: Optional[Browser] = None
         self.visited_urls: Set[str] = set()
@@ -185,6 +184,26 @@ class JobScraper:
             # Attach health analysis to company metadata
             for job in domain_jobs:
                 job['company_health'] = health_analysis
+        
+        # Save jobs to Supabase (if configured)
+        try:
+            # Extract clean domain from URL
+            parsed = urlparse(domain_url)
+            domain = parsed.netloc
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            save_jobs_for_domain(
+                company_name=company_name,
+                domain=domain,
+                jobs=domain_jobs,
+                source_url=domain_url,
+            )
+        except Exception as e:
+            self.logger.error(
+                "Error saving jobs to Supabase",
+                extra={"domain": domain_url, "error": str(e)},
+            )
         
         return domain_jobs
 
@@ -360,7 +379,7 @@ class JobScraper:
         if ats_type:
             # Enhanced logging per requirements
             self.logger.info(f"[ATS] {ats_type} detected. Scraping via embedded jobs list.")
-            await self._extract_from_ats(ats_type, page_url, company_name, root_domain, jobs_list)
+            await self._extract_from_ats(ats_type, page_url, company_name, jobs_list)
             return
 
         # Progressive fallback extraction
@@ -468,10 +487,6 @@ class JobScraper:
 
             jobs_list.append(job_payload)
             self.incremental_tracker.add_job(company_name, job_payload)
-            
-            # Save to database
-            self._save_job_to_database(company_name, root_domain, job_payload)
-            
             jobs_added += 1
             
             # Enhanced logging per requirements - full job details
@@ -525,7 +540,6 @@ class JobScraper:
         ats_type: str,
         page_url: str,
         company_name: str,
-        root_domain: str,
         jobs_list: List[Dict]
     ):
         """Extract jobs from ATS API."""
@@ -554,18 +568,13 @@ class JobScraper:
                 if self.job_deduplicator.is_duplicate(normalized_job):
                     continue
 
-                job_payload = {
+                jobs_list.append({
                     **normalized_job,
                     "company": company_name,
                     "timestamp": datetime.utcnow().isoformat() + 'Z',
                     "extraction_source": f"ats_{ats_type}",
-                }
-                
-                jobs_list.append(job_payload)
+                })
                 self.incremental_tracker.add_job(company_name, normalized_job)
-                
-                # Save to database
-                self._save_job_to_database(company_name, root_domain, job_payload)
 
             self.logger.info("Extracted %d jobs from %s ATS", len(jobs), ats_type)
 
@@ -616,36 +625,6 @@ class JobScraper:
             'is_hubspot_focused': title_classification['is_hubspot_focused'],
             'source': job.get('source', 'unknown'),
         }
-
-    def _save_job_to_database(self, company_name: str, root_domain: str, job_data: Dict) -> None:
-        """
-        Save a job to the database.
-        
-        Args:
-            company_name: Company name
-            root_domain: Company domain
-            job_data: Job data dictionary
-        """
-        if not self.db_service._is_enabled():
-            return
-        
-        try:
-            # Extract domain from root_domain URL
-            parsed = urlparse(root_domain)
-            domain = parsed.netloc
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            
-            # Save job to database (handles company, job, metadata, ATS, and history)
-            self.db_service.save_scraped_job(
-                company_name=company_name,
-                company_domain=domain,
-                company_source_url=root_domain,
-                job_data=job_data,
-                save_history=True
-            )
-        except Exception as e:
-            self.logger.error(f"Error saving job to database: {e}", exc_info=False)
 
     def _normalize_url(self, url: str) -> Optional[str]:
         """Normalize a URL."""
@@ -793,15 +772,9 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
     scraper = JobScraper()
     await scraper.initialize()
 
-    # Create scrape run record in database
-    from db_service import DatabaseService
-    db_service = DatabaseService()
-    scrape_run_id = db_service.create_scrape_run()
-
     all_jobs = []
     success_count = 0
     failed_count = 0
-    errors_list = []
 
     try:
         # Scrape each domain
@@ -852,14 +825,6 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                     
             except Exception as e:
                 failed_count += 1
-                
-                # Track error for scrape run
-                errors_list.append({
-                    "domain": website,
-                    "error": str(e),
-                    "timestamp": datetime.utcnow().isoformat()
-                })
-                
                 logger.error(
                     "❌ Domain failed",
                     extra={
@@ -876,15 +841,6 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
 
     finally:
         await scraper.shutdown()
-        
-        # Update scrape run with final metrics
-        if scrape_run_id:
-            db_service.update_scrape_run(
-                run_id=scrape_run_id,
-                total_companies=len(domains),
-                total_jobs=len(all_jobs),
-                errors={"errors": errors_list} if errors_list else None
-            )
     
     duration = (datetime.utcnow() - start_time).total_seconds()
     
