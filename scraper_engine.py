@@ -768,79 +768,78 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
         }
     )
 
-    # Initialize scraper
-    scraper = JobScraper()
-    await scraper.initialize()
-
     all_jobs = []
     success_count = 0
     failed_count = 0
 
-    try:
-        # Scrape each domain
-        for idx, domain_data in enumerate(domains, 1):
-            website = domain_data.get('website')
-            company_name = domain_data.get('title', website)
+    # Scrape each domain with a fresh browser instance
+    for idx, domain_data in enumerate(domains, 1):
+        website = domain_data.get('website')
+        company_name = domain_data.get('title', website)
 
-            if not website:
-                logger.warning(
-                    "Skipping entry with no website",
-                    extra={"index": idx, "data": domain_data}
-                )
-                continue
-
-            logger.info(
-                "🌐 Starting domain [%d/%d]",
-                idx,
-                len(domains),
-                extra={"domain": website, "company": company_name}
+        if not website:
+            logger.warning(
+                "Skipping entry with no website",
+                extra={"index": idx, "data": domain_data}
             )
+            continue
 
-            try:
-                jobs = await scraper.scrape_domain(website, company_name)
-                all_jobs.extend(jobs)
-                
-                if jobs:
-                    success_count += 1
-                    logger.info(
-                        "✅ Domain complete",
-                        extra={
-                            "domain": website,
-                            "jobs_found": len(jobs),
-                            "progress": f"{idx}/{len(domains)}"
-                        }
-                    )
-                else:
-                    logger.info(
-                        "ℹ️  Domain complete - no jobs found",
-                        extra={
-                            "domain": website,
-                            "progress": f"{idx}/{len(domains)}"
-                        }
-                    )
-                
-                # Call progress callback if provided
-                if progress_callback:
-                    await progress_callback(idx, len(domains), jobs, all_jobs)
-                    
-            except Exception as e:
-                failed_count += 1
-                logger.error(
-                    "❌ Domain failed",
+        logger.info(
+            "🌐 Starting domain [%d/%d]",
+            idx,
+            len(domains),
+            extra={"domain": website, "company": company_name}
+        )
+
+        # Create new scraper instance per domain
+        scraper = JobScraper()
+        await scraper.initialize()
+
+        try:
+            jobs = await scraper.scrape_domain(website, company_name)
+            all_jobs.extend(jobs)
+            
+            if jobs:
+                success_count += 1
+                logger.info(
+                    "✅ Domain complete",
                     extra={
                         "domain": website,
-                        "error": str(e),
+                        "jobs_found": len(jobs),
                         "progress": f"{idx}/{len(domains)}"
-                    },
-                    exc_info=False
+                    }
                 )
+            else:
+                logger.info(
+                    "ℹ️  Domain complete - no jobs found",
+                    extra={
+                        "domain": website,
+                        "progress": f"{idx}/{len(domains)}"
+                    }
+                )
+            
+            # Call progress callback if provided
+            if progress_callback:
+                await progress_callback(idx, len(domains), jobs, all_jobs)
                 
-                # Call progress callback even on failure
-                if progress_callback:
-                    await progress_callback(idx, len(domains), [], all_jobs)
-
-    finally:
-        await scraper.shutdown()
+        except Exception as e:
+            failed_count += 1
+            logger.error(
+                "❌ Domain failed",
+                extra={
+                    "domain": website,
+                    "error": str(e),
+                    "progress": f"{idx}/{len(domains)}"
+                },
+                exc_info=False
+            )
+            
+            # Call progress callback even on failure
+            if progress_callback:
+                await progress_callback(idx, len(domains), [], all_jobs)
+        finally:
+            # Always close browser after each domain
+            await scraper.shutdown()
     
     duration = (datetime.utcnow() - start_time).total_seconds()
     
