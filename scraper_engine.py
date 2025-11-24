@@ -39,7 +39,7 @@ from extraction_utils import (
 )
 from blacklist import DomainBlacklist
 from logging_config import get_logger
-from supabase_persistence import save_jobs_for_domain
+from supabase_persistence import save_jobs_for_domain, create_scrape_run, update_scrape_run
 
 logger = get_logger(__name__)
 
@@ -132,7 +132,7 @@ class JobScraper:
             await self.browser.close()
             self.logger.info("Browser closed")
 
-    async def scrape_domain(self, domain_url: str, company_name: str, page: Optional[Page] = None) -> List[Dict]:
+    async def scrape_domain(self, domain_url: str, company_name: str, page: Optional[Page] = None, run_id: Optional[str] = None) -> List[Dict]:
         """
         Scrape a single company domain for job postings.
         
@@ -150,6 +150,7 @@ class JobScraper:
             company_name: The company name
             page: Optional Page instance to use. If provided, uses this page directly.
                   If None, creates a new context and page internally (backward compatibility).
+            run_id: Optional scrape run ID to associate jobs with
 
         Returns:
             List of job dicts found on this domain
@@ -200,11 +201,15 @@ class JobScraper:
                 domain=domain,
                 jobs=domain_jobs,
                 source_url=domain_url,
+                run_id=run_id,
             )
+            
+            if domain_jobs:
+                self.logger.info(f"Saved {len(domain_jobs)} jobs to Supabase for domain={domain}, run_id={run_id}")
         except Exception as e:
             self.logger.error(
                 "Error saving jobs to Supabase",
-                extra={"domain": domain_url, "error": str(e)},
+                extra={"domain": domain_url, "run_id": run_id, "error": str(e)},
             )
         
         return domain_jobs
@@ -782,6 +787,11 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
             "source": domains_file
         }
     )
+    
+    # Create scrape run in Supabase
+    run_id = create_scrape_run(total_companies=len(domains))
+    if run_id:
+        logger.info(f"Created scrape run with ID: {run_id}")
 
     all_jobs = []
     success_count = 0
@@ -818,8 +828,8 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                 context = await scraper.browser.new_context()
                 page = await context.new_page()
                 
-                # Scrape the domain using the isolated context's page
-                jobs = await scraper.scrape_domain(website, company_name, page=page)
+                # Scrape the domain using the isolated context's page, passing run_id
+                jobs = await scraper.scrape_domain(website, company_name, page=page, run_id=run_id)
                 all_jobs.extend(jobs)
                 
                 if jobs:
@@ -844,6 +854,10 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                 # Call progress callback if provided
                 if progress_callback:
                     await progress_callback(idx, len(domains), jobs, all_jobs)
+                
+                # Update scrape run progress
+                if run_id:
+                    update_scrape_run(run_id, total_jobs=len(all_jobs))
                     
             except Exception as e:
                 failed_count += 1
@@ -869,12 +883,17 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
     finally:
         # Always shutdown the browser after all domains are processed
         await scraper.shutdown()
+        
+        # Mark scrape run as finished
+        if run_id:
+            update_scrape_run(run_id, total_jobs=len(all_jobs), finished=True)
     
     duration = (datetime.utcnow() - start_time).total_seconds()
     
     logger.info(
         "🏁 Crawl run completed",
         extra={
+            "run_id": run_id,
             "domains_total": len(domains),
             "domains_success": success_count,
             "domains_failed": failed_count,
