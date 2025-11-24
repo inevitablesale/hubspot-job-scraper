@@ -852,6 +852,7 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                 # Close browser after each domain if RESET_BROWSER_EACH_DOMAIN is True
                 if RESET_BROWSER_EACH_DOMAIN and scraper:
                     await scraper.shutdown()
+                    scraper = None
 
     finally:
         # Clean up scraper if using single browser mode
