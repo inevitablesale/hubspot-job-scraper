@@ -235,6 +235,7 @@ class JobScraper:
                         run_id=run_id,
                         company_id=company_id,
                         jobs=prepared_jobs,
+                        domain=domain,
                     )
                     
                     self.logger.info(f"Saved {len(prepared_jobs)} jobs to Supabase for domain={domain}, run_id={run_id}")

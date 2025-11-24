@@ -504,7 +504,7 @@ def _get_recent_jobs() -> dict:
     Falls back to in-memory only if Supabase is unavailable.
     
     Returns:
-        Dictionary with jobs array and count
+        Dictionary with jobs array, count, and run_id
     """
     # First priority: get jobs for current run from Supabase
     run_id = crawl_status.current_run_id
@@ -532,7 +532,8 @@ def _get_recent_jobs() -> dict:
             
             return {
                 "jobs": formatted_jobs,
-                "count": len(formatted_jobs)
+                "count": len(formatted_jobs),
+                "run_id": run_id
             }
     
     # Second priority: try getting all recent jobs from Supabase
@@ -559,20 +560,23 @@ def _get_recent_jobs() -> dict:
         
         return {
             "jobs": formatted_jobs,
-            "count": len(formatted_jobs)
+            "count": len(formatted_jobs),
+            "run_id": run_id
         }
     
     # Fallback to in-memory jobs if Supabase unavailable
     if crawl_status.recent_jobs:
         return {
             "jobs": crawl_status.recent_jobs,
-            "count": len(crawl_status.recent_jobs)
+            "count": len(crawl_status.recent_jobs),
+            "run_id": run_id
         }
     
     # Return empty only if nothing available
     return {
         "jobs": [],
-        "count": 0
+        "count": 0,
+        "run_id": run_id
     }
 
 
