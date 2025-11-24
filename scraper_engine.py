@@ -40,6 +40,7 @@ from extraction_utils import (
 from blacklist import DomainBlacklist
 from logging_config import get_logger
 from supabase_persistence import save_jobs_for_domain, create_scrape_run, update_scrape_run, get_or_create_company
+from supabase_client import get_supabase_client
 
 logger = get_logger(__name__)
 
@@ -191,8 +192,6 @@ class JobScraper:
         # Save jobs to Supabase (if configured)
         if run_id and domain_jobs:
             try:
-                from supabase_client import get_supabase_client
-                
                 # Extract clean domain from URL
                 parsed = urlparse(domain_url)
                 domain = parsed.netloc
@@ -213,7 +212,7 @@ class JobScraper:
                     for job in domain_jobs:
                         prepared_job = {
                             "job_title": job.get("title") or job.get("job_title") or "Unknown",
-                            "job_url": job.get("url") or job.get("job_url") or domain_url,
+                            "job_url": job.get("url") or job.get("job_url") or "",
                             "department": job.get("department") or "other",
                             "location": job.get("location") or "",
                             "remote_type": job.get("remote_type") or job.get("location_type") or "",
