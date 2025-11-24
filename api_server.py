@@ -321,7 +321,7 @@ async def list_jobs(
         domain: Filter by specific domain
         remote_only: Show only remote jobs
     """
-    return crawler_state.query_jobs(q=q, domain=domain, remote_only=remote_only)
+    return await crawler_state.query_jobs(q=q, domain=domain, remote_only=remote_only)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobItem)
