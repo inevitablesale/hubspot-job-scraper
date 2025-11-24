@@ -154,13 +154,11 @@ class CrawlerState:
                 logger.info(f"Loaded {len(jobs)} jobs from database")
             except Exception as e:
                 logger.error(f"Failed to load jobs from database: {e}")
+                logger.warning("Operating in memory-only mode for this session")
                 self._loaded_from_db = True  # Mark as loaded to avoid retry loops
-        self._screenshots: Dict[str, List[ScreenshotInfo]] = {}
-        
-        # Background task reference
-        self._current_task: Optional[asyncio.Task] = None
-        self._stop_requested: bool = False
-        self._pause_requested: bool = False
+        else:
+            # No database configured, mark as loaded
+            self._loaded_from_db = True
     
     def is_running(self) -> bool:
         """Check if crawler is currently running."""

@@ -26,10 +26,18 @@ class SupabaseDatabase:
     
     def __init__(self):
         """Initialize Supabase client with environment variables."""
-        self.url = os.getenv("SUPABASE_URL", "https://dlcjgctfijlnolktfmfg.supabase.co")
+        self.url = os.getenv("SUPABASE_URL")
         self.key = os.getenv("SUPABASE_ANON_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         self.client: Optional[Client] = None
-        self.enabled = bool(self.key)
+        self.enabled = bool(self.url and self.key)
+        
+        if not self.url:
+            logger.warning("SUPABASE_URL not set. Database persistence disabled.")
+            return
+        
+        if not self.key:
+            logger.warning("SUPABASE_ANON_KEY or SUPABASE_SERVICE_ROLE_KEY not set. Database persistence disabled.")
+            return
         
         if self.enabled:
             try:
@@ -38,8 +46,6 @@ class SupabaseDatabase:
             except Exception as e:
                 logger.error(f"Failed to initialize Supabase client: {e}")
                 self.enabled = False
-        else:
-            logger.warning("Supabase credentials not found. Database persistence disabled.")
     
     async def save_job(self, job: JobItem) -> bool:
         """

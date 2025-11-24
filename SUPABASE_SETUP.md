@@ -8,7 +8,7 @@ This project uses Supabase for persistent job storage across server restarts.
 
 Run the SQL script in `supabase_schema.sql` in your Supabase SQL Editor:
 
-1. Go to https://dlcjgctfijlnolktfmfg.supabase.co
+1. Go to your Supabase project dashboard (e.g., https://your-project-id.supabase.co)
 2. Navigate to SQL Editor
 3. Copy and paste the contents of `supabase_schema.sql`
 4. Run the script
