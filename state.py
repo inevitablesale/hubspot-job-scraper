@@ -26,6 +26,21 @@ from models import (
 
 logger = logging.getLogger(__name__)
 
+# Import database module (will be lazy loaded to avoid circular imports)
+_db = None
+
+def get_db():
+    """Lazy load database module."""
+    global _db
+    if _db is None:
+        try:
+            from database import db
+            _db = db
+        except ImportError:
+            logger.warning("Database module not available")
+            _db = None
+    return _db
+
 
 class EventBus:
     """
@@ -119,6 +134,33 @@ class CrawlerState:
         self._current_task: Optional[asyncio.Task] = None
         self._stop_requested: bool = False
         self._pause_requested: bool = False
+        
+        # Load jobs from database on initialization
+        self._loaded_from_db = False
+    
+    async def _ensure_jobs_loaded(self):
+        """Ensure jobs are loaded from database (lazy loading)."""
+        if self._loaded_from_db:
+            return
+        
+        db = get_db()
+        if db and db.enabled:
+            try:
+                logger.info("Loading jobs from Supabase database...")
+                jobs = await db.load_jobs()
+                self._jobs = jobs
+                self._jobs_found = len(jobs)
+                self._loaded_from_db = True
+                logger.info(f"Loaded {len(jobs)} jobs from database")
+            except Exception as e:
+                logger.error(f"Failed to load jobs from database: {e}")
+                self._loaded_from_db = True  # Mark as loaded to avoid retry loops
+        self._screenshots: Dict[str, List[ScreenshotInfo]] = {}
+        
+        # Background task reference
+        self._current_task: Optional[asyncio.Task] = None
+        self._stop_requested: bool = False
+        self._pause_requested: bool = False
     
     def is_running(self) -> bool:
         """Check if crawler is currently running."""
@@ -179,10 +221,18 @@ class CrawlerState:
             self._state = "error"
         logger.info(f"Crawl run finished. State: {self._state}")
     
-    def add_job(self, job: JobItem):
-        """Add a job to the results."""
+    async def add_job(self, job: JobItem):
+        """Add a job to the results and persist to database."""
         self._jobs.append(job)
         self._jobs_found = len(self._jobs)
+        
+        # Persist to database asynchronously
+        db = get_db()
+        if db and db.enabled:
+            try:
+                await db.save_job(job)
+            except Exception as e:
+                logger.error(f"Failed to persist job to database: {e}")
     
     def add_domain(self, domain: DomainItem):
         """Add or update a domain."""
@@ -198,13 +248,16 @@ class CrawlerState:
         """Increment the errors counter."""
         self._errors_count += 1
     
-    def query_jobs(
+    async def query_jobs(
         self,
         q: Optional[str] = None,
         domain: Optional[str] = None,
         remote_only: bool = False
     ) -> List[JobItem]:
         """Query jobs with filters."""
+        # Ensure jobs are loaded from database
+        await self._ensure_jobs_loaded()
+        
         results = self._jobs
         
         if q:
