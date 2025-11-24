@@ -1,6 +1,7 @@
 # supabase_persistence.py
 import hashlib
 import logging
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -59,13 +60,12 @@ def get_or_create_company(
     return resp.data[0]["id"] if resp.data else None
 
 
-def create_scrape_run(total_companies: int = 0) -> Optional[str]:
+def create_scrape_run() -> Optional[str]:
     """
     Create a new scrape run record in Supabase.
     
-    Args:
-        total_companies: Total number of companies to scrape
-        
+    Uses schema: id (uuid), hash (text), active (bool), ats_provider (text)
+    
     Returns:
         run_id (UUID as string) if successful, None otherwise
     """
@@ -74,15 +74,19 @@ def create_scrape_run(total_companies: int = 0) -> Optional[str]:
         return None
     
     try:
+        run_id = str(uuid.uuid4())
+        random_hash = hashlib.sha256(run_id.encode()).hexdigest()[:16]
+        
         insert_data = {
-            "total_companies": total_companies,
-            "total_jobs": 0,
+            "id": run_id,
+            "hash": random_hash,
+            "active": True,
+            "ats_provider": "hubspot",
         }
         resp = client.table("scrape_runs").insert(insert_data).execute()
         
         if resp.data:
-            run_id = resp.data[0]["id"]
-            logger.info(f"Created scrape run: run_id={run_id}, total_companies={total_companies}")
+            logger.info(f"Created scrape run: run_id={run_id}")
             return run_id
         return None
     except Exception as e:
@@ -90,150 +94,122 @@ def create_scrape_run(total_companies: int = 0) -> Optional[str]:
         return None
 
 
-def update_scrape_run(run_id: str, total_jobs: Optional[int] = None, finished: bool = False) -> None:
+def update_scrape_run(run_id: str, fields: dict) -> None:
     """
-    Update a scrape run with progress or mark as complete.
+    Update a scrape run with arbitrary fields.
     
     Args:
         run_id: The scrape run ID
-        total_jobs: Total jobs found (optional)
-        finished: Whether to mark run as finished
+        fields: Dictionary of fields to update
     """
     client = get_supabase_client()
     if client is None:
         return
     
     try:
-        update_data = {}
-        if total_jobs is not None:
-            update_data["total_jobs"] = total_jobs
-        if finished:
-            update_data["finished_at"] = datetime.utcnow().isoformat()
-        
-        if update_data:
-            client.table("scrape_runs").update(update_data).eq("id", run_id).execute()
-            logger.debug(f"Updated scrape run {run_id}: {update_data}")
+        if fields:
+            client.table("scrape_runs").update(fields).eq("id", run_id).execute()
+            logger.debug(f"Updated scrape run {run_id}: {fields}")
     except Exception as e:
         logger.error(f"Failed to update scrape run {run_id}: {e}")
 
 
 def save_jobs_for_domain(
-    company_name: str,
-    domain: str,
+    run_id: str,
+    company_id: str,
     jobs: List[Dict],
-    source_url: Optional[str] = None,
-    run_id: Optional[str] = None,
 ) -> None:
     """
     Persist all jobs for a given domain into Supabase.
+    
+    ALWAYS inserts new rows (never upserts or updates).
 
     Args:
-        company_name: Company name
-        domain: Company domain
-        jobs: List of job dictionaries
-        source_url: Source URL for the company page
-        run_id: Scrape run ID to associate jobs with
+        run_id: Scrape run ID to associate jobs with (REQUIRED)
+        company_id: Company UUID (REQUIRED)
+        jobs: List of job dictionaries with guaranteed fields:
+              - job_title
+              - job_url
+              - department
+              - location
+              - remote_type
+              - description
+              - posted_at (optional)
+              - scraped_at (optional)
+              - hash
+              - active
+              - ats_provider
     """
     client = get_supabase_client()
     if client is None:
         # Supabase not configured, silently skip
         return
 
-    # Ensure run_id column exists (one-time check)
-    _ensure_run_id_column(client)
-
-    company_id = get_or_create_company(
-        client=client,
-        name=company_name,
-        domain=domain,
-        source_url=source_url,
-    )
-
-    if not company_id:
+    if not run_id or not company_id:
+        logger.error("run_id and company_id are required for save_jobs_for_domain")
         return
 
     jobs_inserted = 0
     for job in jobs:
-        title = job.get("job_title") or job.get("title") or ""
+        # Extract guaranteed fields from job dict
+        job_title = job.get("job_title") or job.get("title") or ""
         job_url = job.get("job_url") or job.get("url") or ""
-        description = job.get("description") or ""
         department = job.get("department")
         location = job.get("location")
         remote_type = job.get("remote_type")
-        ats_provider = job.get("ats_provider") or job.get("ats")
+        description = job.get("description") or ""
         posted_at = job.get("posted_at")
+        scraped_at = job.get("scraped_at")
+        job_hash = job.get("hash")
+        active = job.get("active", True)
+        ats_provider = job.get("ats_provider") or job.get("ats")
 
-        # Normalize posted_at to ISO or None
+        # Normalize timestamps to ISO or None
         if isinstance(posted_at, datetime):
             posted_at_iso = posted_at.isoformat()
         else:
             posted_at_iso = posted_at or None
-
-        job_hash = _compute_job_hash(company_id, title, job_url)
-
-        # Check if job already exists
-        existing = (
-            client.table("jobs")
-            .select("id, description")
-            .eq("hash", job_hash)
-            .execute()
-        )
-
-        if existing.data:
-            job_id = existing.data[0]["id"]
-            # Update existing job with run_id if provided
-            if run_id:
-                try:
-                    client.table("jobs").update({"run_id": run_id}).eq("id", job_id).execute()
-                except Exception as e:
-                    # Column might not exist yet, log and continue
-                    logger.debug(f"Could not update run_id on existing job: {e}")
+        
+        if isinstance(scraped_at, datetime):
+            scraped_at_iso = scraped_at.isoformat()
         else:
-            insert_data = {
-                "company_id": company_id,
-                "job_title": title,
-                "job_url": job_url,
-                "department": department,
-                "location": location,
-                "remote_type": remote_type,
-                "description": description,
-                "posted_at": posted_at_iso,
-                "hash": job_hash,
-                "ats_provider": ats_provider,
-            }
+            scraped_at_iso = scraped_at or datetime.utcnow().isoformat()
+
+        # If hash not provided, compute it
+        if not job_hash:
+            job_hash = _compute_job_hash(company_id, job_title, job_url)
+
+        # Build insert data with all required fields
+        insert_data = {
+            "company_id": company_id,
+            "run_id": run_id,
+            "job_title": job_title,
+            "job_url": job_url,
+            "department": department,
+            "location": location,
+            "remote_type": remote_type,
+            "description": description,
+            "posted_at": posted_at_iso,
+            "scraped_at": scraped_at_iso,
+            "hash": job_hash,
+            "active": active,
+            "ats_provider": ats_provider,
+        }
+        
+        try:
+            resp = client.table("jobs").insert(insert_data).execute()
+            job_id = resp.data[0]["id"] if resp.data else None
             
-            # Add run_id if provided
-            if run_id:
-                insert_data["run_id"] = run_id
-            
-            try:
-                resp = client.table("jobs").insert(insert_data).execute()
-                job_id = resp.data[0]["id"] if resp.data else None
-                
-                if job_id:
-                    jobs_inserted += 1
-                    # Insert job_metadata if present
-                    _save_job_metadata(client, job_id, job)
-            except Exception as e:
-                # If run_id column doesn't exist, try without it
-                error_msg = str(e).lower()
-                if "run_id" in error_msg or "column" in error_msg:
-                    logger.debug("run_id column not yet created, inserting without it")
-                    insert_data.pop("run_id", None)
-                    try:
-                        resp = client.table("jobs").insert(insert_data).execute()
-                        job_id = resp.data[0]["id"] if resp.data else None
-                        if job_id:
-                            jobs_inserted += 1
-                            _save_job_metadata(client, job_id, job)
-                    except Exception as fallback_error:
-                        logger.error(f"Failed to insert job: {fallback_error}")
-                else:
-                    logger.error(f"Failed to insert job: {e}")
+            if job_id:
+                jobs_inserted += 1
+                # Insert job_metadata if present
+                _save_job_metadata(client, job_id, job)
+        except Exception as e:
+            logger.error(f"Failed to insert job: {e}")
     
     # Log insertion summary as per requirements
     if jobs_inserted > 0:
-        logger.info(f"Saving {jobs_inserted} jobs for run_id={run_id}, domain={domain}")
+        logger.info(f"Saved {jobs_inserted} jobs for run_id={run_id}, company_id={company_id}")
 
 
 def _save_job_metadata(client: Client, job_id: str, job: Dict) -> None:
@@ -286,7 +262,7 @@ def get_jobs_for_run(run_id: str) -> List[Dict]:
         )
         
         jobs = resp.data or []
-        logger.info(f"Fetching jobs for UI: run_id={run_id}, count={len(jobs)}")
+        logger.info(f"Retrieved {len(jobs)} jobs for run_id={run_id}")
         return jobs
     except Exception as e:
         logger.error(f"Failed to retrieve jobs for run {run_id}: {e}")

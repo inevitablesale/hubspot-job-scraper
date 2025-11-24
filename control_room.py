@@ -184,7 +184,16 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
                 return
             
             # Run scraper with progress callback
-            jobs = await run_scraper(progress_callback=progress_update)
+            result = await run_scraper(progress_callback=progress_update)
+            
+            # Handle tuple return (jobs, run_id)
+            if isinstance(result, tuple):
+                jobs, run_id = result
+                # Store run_id for UI to fetch jobs from Supabase
+                crawl_status.current_run_id = run_id
+            else:
+                # Backward compatibility if run_scraper returns just jobs
+                jobs = result
             
             # Check if stop was requested during execution
             if crawl_status.stop_requested:
@@ -203,7 +212,7 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
             
             logger.info(
                 "✅ Control room crawl completed successfully",
-                extra={"jobs_found": len(jobs)}
+                extra={"jobs_found": len(jobs), "run_id": crawl_status.current_run_id}
             )
         
         finally:
@@ -491,13 +500,42 @@ def _get_recent_jobs() -> dict:
     """
     Helper function to get recent job results from Supabase.
     
-    Returns jobs from Supabase database (persistent storage).
+    Returns jobs from Supabase database using current_run_id (persistent storage).
     Falls back to in-memory only if Supabase is unavailable.
     
     Returns:
         Dictionary with jobs array and count
     """
-    # Try to get jobs from Supabase (persistent)
+    # First priority: get jobs for current run from Supabase
+    run_id = crawl_status.current_run_id
+    if run_id:
+        jobs_from_db = get_jobs_for_run(run_id)
+        
+        if jobs_from_db:
+            # Transform Supabase job format to UI format
+            formatted_jobs = []
+            for job in jobs_from_db:
+                company = job.get("companies") or {}
+                formatted_jobs.append({
+                    "id": job.get("id"),
+                    "title": job.get("job_title"),
+                    "company": company.get("name", "Unknown"),
+                    "domain": company.get("domain", ""),
+                    "url": job.get("job_url"),
+                    "location": job.get("location"),
+                    "remote_type": job.get("remote_type"),
+                    "department": job.get("department"),
+                    "description": job.get("description"),
+                    "ats_provider": job.get("ats_provider"),
+                    "scraped_at": job.get("scraped_at"),
+                })
+            
+            return {
+                "jobs": formatted_jobs,
+                "count": len(formatted_jobs)
+            }
+    
+    # Second priority: try getting all recent jobs from Supabase
     jobs_from_db = get_all_jobs(limit=500)
     
     if jobs_from_db:

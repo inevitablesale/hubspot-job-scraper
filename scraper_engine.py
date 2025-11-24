@@ -39,7 +39,7 @@ from extraction_utils import (
 )
 from blacklist import DomainBlacklist
 from logging_config import get_logger
-from supabase_persistence import save_jobs_for_domain, create_scrape_run, update_scrape_run
+from supabase_persistence import save_jobs_for_domain, create_scrape_run, update_scrape_run, get_or_create_company
 
 logger = get_logger(__name__)
 
@@ -189,28 +189,55 @@ class JobScraper:
                 job['company_health'] = health_analysis
         
         # Save jobs to Supabase (if configured)
-        try:
-            # Extract clean domain from URL
-            parsed = urlparse(domain_url)
-            domain = parsed.netloc
-            if domain.startswith('www.'):
-                domain = domain[4:]
-            
-            save_jobs_for_domain(
-                company_name=company_name,
-                domain=domain,
-                jobs=domain_jobs,
-                source_url=domain_url,
-                run_id=run_id,
-            )
-            
-            if domain_jobs:
-                self.logger.info(f"Saved {len(domain_jobs)} jobs to Supabase for domain={domain}, run_id={run_id}")
-        except Exception as e:
-            self.logger.error(
-                "Error saving jobs to Supabase",
-                extra={"domain": domain_url, "run_id": run_id, "error": str(e)},
-            )
+        if run_id and domain_jobs:
+            try:
+                from supabase_client import get_supabase_client
+                
+                # Extract clean domain from URL
+                parsed = urlparse(domain_url)
+                domain = parsed.netloc
+                if domain.startswith('www.'):
+                    domain = domain[4:]
+                
+                # Get or create company
+                company_id = get_or_create_company(
+                    client=get_supabase_client(),
+                    name=company_name,
+                    domain=domain,
+                    source_url=domain_url,
+                )
+                
+                if company_id:
+                    # Prepare jobs with all required fields
+                    prepared_jobs = []
+                    for job in domain_jobs:
+                        prepared_job = {
+                            "job_title": job.get("title") or job.get("job_title") or "Unknown",
+                            "job_url": job.get("url") or job.get("job_url") or domain_url,
+                            "department": job.get("department") or "other",
+                            "location": job.get("location") or "",
+                            "remote_type": job.get("remote_type") or job.get("location_type") or "",
+                            "description": job.get("summary") or job.get("description") or "",
+                            "posted_at": job.get("posted_at"),
+                            "scraped_at": job.get("timestamp") or datetime.utcnow().isoformat(),
+                            "hash": hashlib.sha256(f"{company_id}:{job.get('title', '')}:{job.get('url', '')}".encode()).hexdigest(),
+                            "active": True,
+                            "ats_provider": job.get("ats_provider") or job.get("extraction_source") or "hubspot",
+                        }
+                        prepared_jobs.append(prepared_job)
+                    
+                    save_jobs_for_domain(
+                        run_id=run_id,
+                        company_id=company_id,
+                        jobs=prepared_jobs,
+                    )
+                    
+                    self.logger.info(f"Saved {len(prepared_jobs)} jobs to Supabase for domain={domain}, run_id={run_id}")
+            except Exception as e:
+                self.logger.error(
+                    "Error saving jobs to Supabase",
+                    extra={"domain": domain_url, "run_id": run_id, "error": str(e)},
+                )
         
         return domain_jobs
 
@@ -758,7 +785,7 @@ class JobScraper:
             return False
 
 
-async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[Dict]:
+async def scrape_all_domains(domains_file: str, progress_callback=None) -> tuple[List[Dict], Optional[str]]:
     """
     Scrape all domains from a JSON file.
 
@@ -768,7 +795,7 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                           (domain_idx, total_domains, jobs_from_domain, all_jobs_so_far)
 
     Returns:
-        List of all jobs found across all domains
+        Tuple of (list of all jobs found, run_id if created)
     """
     from datetime import datetime
     
@@ -778,7 +805,7 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
     domains = load_domains(domains_file)
     if not domains:
         logger.error("No domains loaded from %s", domains_file)
-        return []
+        return [], None
 
     logger.info(
         "📋 Starting crawl run",
@@ -789,7 +816,7 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
     )
     
     # Create scrape run in Supabase
-    run_id = create_scrape_run(total_companies=len(domains))
+    run_id = create_scrape_run()
     if run_id:
         logger.info(f"Created scrape run with ID: {run_id}")
 
@@ -855,9 +882,12 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                 if progress_callback:
                     await progress_callback(idx, len(domains), jobs, all_jobs)
                 
-                # Update scrape run progress
+                # Update scrape run progress after each domain
                 if run_id:
-                    update_scrape_run(run_id, total_jobs=len(all_jobs))
+                    update_scrape_run(run_id, {
+                        "last_domain": website,
+                        "domains_completed": idx
+                    })
                     
             except Exception as e:
                 failed_count += 1
@@ -886,7 +916,7 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
         
         # Mark scrape run as finished
         if run_id:
-            update_scrape_run(run_id, total_jobs=len(all_jobs), finished=True)
+            update_scrape_run(run_id, {"active": False})
     
     duration = (datetime.utcnow() - start_time).total_seconds()
     
@@ -902,7 +932,7 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
         }
     )
     
-    return all_jobs
+    return all_jobs, run_id
 
 
 def load_domains(file_path: str) -> List[Dict]:
