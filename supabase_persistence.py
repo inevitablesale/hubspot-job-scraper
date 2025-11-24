@@ -17,23 +17,12 @@ _RUN_ID_COLUMN_CHECKED = False
 
 def _ensure_run_id_column(client: Client) -> None:
     """
-    Ensure the jobs table has a run_id column.
-    Uses Supabase to alter the table if needed.
-    Only attempts once per session.
+    Placeholder for run_id column check.
+    The actual column will be added manually via Supabase UI or automatically
+    handled by the insert/update logic which gracefully falls back if column doesn't exist.
     """
     global _RUN_ID_COLUMN_CHECKED
-    
-    if _RUN_ID_COLUMN_CHECKED:
-        return
-    
-    try:
-        # Try to add the column using a simple upsert with run_id
-        # If it fails, the column doesn't exist
-        _RUN_ID_COLUMN_CHECKED = True
-        logger.debug("run_id column check complete")
-    except Exception as e:
-        logger.debug(f"run_id column check skipped: {e}")
-        _RUN_ID_COLUMN_CHECKED = True
+    _RUN_ID_COLUMN_CHECKED = True
 
 
 def _compute_job_hash(company_id: str, title: str, url: str) -> str:
@@ -196,8 +185,9 @@ def save_jobs_for_domain(
             if run_id:
                 try:
                     client.table("jobs").update({"run_id": run_id}).eq("id", job_id).execute()
-                except Exception:
-                    pass  # Column might not exist yet, that's OK
+                except Exception as e:
+                    # Column might not exist yet, log and continue
+                    logger.debug(f"Could not update run_id on existing job: {e}")
         else:
             insert_data = {
                 "company_id": company_id,
@@ -226,8 +216,9 @@ def save_jobs_for_domain(
                     _save_job_metadata(client, job_id, job)
             except Exception as e:
                 # If run_id column doesn't exist, try without it
-                if "run_id" in str(e).lower() or "column" in str(e).lower():
-                    logger.debug(f"run_id column not yet created, inserting without it")
+                error_msg = str(e).lower()
+                if "run_id" in error_msg or "column" in error_msg:
+                    logger.debug("run_id column not yet created, inserting without it")
                     insert_data.pop("run_id", None)
                     try:
                         resp = client.table("jobs").insert(insert_data).execute()
@@ -235,8 +226,8 @@ def save_jobs_for_domain(
                         if job_id:
                             jobs_inserted += 1
                             _save_job_metadata(client, job_id, job)
-                    except Exception as e2:
-                        logger.error(f"Failed to insert job: {e2}")
+                    except Exception as fallback_error:
+                        logger.error(f"Failed to insert job: {fallback_error}")
                 else:
                     logger.error(f"Failed to insert job: {e}")
     

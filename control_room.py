@@ -55,11 +55,10 @@ class CrawlStatus:
         self.current_run_id: Optional[str] = None  # Track current scrape run ID
     
     def reset_run(self):
-        """Reset run-specific metrics."""
+        """Reset run-specific metrics for new run."""
         self.domains_processed = 0
         self.jobs_found = 0
         self.last_error = None
-        # Keep recent_jobs for backward compat, but UI reads from Supabase
         self.paused = False
         self.stop_requested = False
         self.current_run_id = None
