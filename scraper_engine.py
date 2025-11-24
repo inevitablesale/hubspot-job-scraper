@@ -70,9 +70,6 @@ ENABLE_HTML_ARCHIVE = os.getenv("ENABLE_HTML_ARCHIVE", "false").lower() == "true
 HTML_ARCHIVE_DIR = Path(os.getenv("HTML_ARCHIVE_DIR", "/tmp/html_archive"))
 JOB_TRACKING_CACHE = Path(os.getenv("JOB_TRACKING_CACHE", ".job_tracking.json"))
 
-# Browser reset configuration - prevents Chromium memory buildup
-RESET_BROWSER_EACH_DOMAIN = True
-
 
 class JobScraper:
     """Main scraper engine using Playwright with enterprise features."""
@@ -775,88 +772,73 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
     success_count = 0
     failed_count = 0
 
-    # Initialize scraper once if not resetting per domain
-    scraper = None
-    if not RESET_BROWSER_EACH_DOMAIN:
+    # Scrape each domain with a fresh browser instance
+    for idx, domain_data in enumerate(domains, 1):
+        website = domain_data.get('website')
+        company_name = domain_data.get('title', website)
+
+        if not website:
+            logger.warning(
+                "Skipping entry with no website",
+                extra={"index": idx, "data": domain_data}
+            )
+            continue
+
+        logger.info(
+            "🌐 Starting domain [%d/%d]",
+            idx,
+            len(domains),
+            extra={"domain": website, "company": company_name}
+        )
+
+        # Create new scraper instance per domain
         scraper = JobScraper()
         await scraper.initialize()
 
-    try:
-        # Scrape each domain
-        for idx, domain_data in enumerate(domains, 1):
-            website = domain_data.get('website')
-            company_name = domain_data.get('title', website)
-
-            if not website:
-                logger.warning(
-                    "Skipping entry with no website",
-                    extra={"index": idx, "data": domain_data}
-                )
-                continue
-
-            logger.info(
-                "🌐 Starting domain [%d/%d]",
-                idx,
-                len(domains),
-                extra={"domain": website, "company": company_name}
-            )
-
-            # Create new scraper instance per domain if RESET_BROWSER_EACH_DOMAIN is True
-            if RESET_BROWSER_EACH_DOMAIN:
-                scraper = JobScraper()
-                await scraper.initialize()
-
-            try:
-                jobs = await scraper.scrape_domain(website, company_name)
-                all_jobs.extend(jobs)
-                
-                if jobs:
-                    success_count += 1
-                    logger.info(
-                        "✅ Domain complete",
-                        extra={
-                            "domain": website,
-                            "jobs_found": len(jobs),
-                            "progress": f"{idx}/{len(domains)}"
-                        }
-                    )
-                else:
-                    logger.info(
-                        "ℹ️  Domain complete - no jobs found",
-                        extra={
-                            "domain": website,
-                            "progress": f"{idx}/{len(domains)}"
-                        }
-                    )
-                
-                # Call progress callback if provided
-                if progress_callback:
-                    await progress_callback(idx, len(domains), jobs, all_jobs)
-                    
-            except Exception as e:
-                failed_count += 1
-                logger.error(
-                    "❌ Domain failed",
+        try:
+            jobs = await scraper.scrape_domain(website, company_name)
+            all_jobs.extend(jobs)
+            
+            if jobs:
+                success_count += 1
+                logger.info(
+                    "✅ Domain complete",
                     extra={
                         "domain": website,
-                        "error": str(e),
+                        "jobs_found": len(jobs),
                         "progress": f"{idx}/{len(domains)}"
-                    },
-                    exc_info=False
+                    }
                 )
+            else:
+                logger.info(
+                    "ℹ️  Domain complete - no jobs found",
+                    extra={
+                        "domain": website,
+                        "progress": f"{idx}/{len(domains)}"
+                    }
+                )
+            
+            # Call progress callback if provided
+            if progress_callback:
+                await progress_callback(idx, len(domains), jobs, all_jobs)
                 
-                # Call progress callback even on failure
-                if progress_callback:
-                    await progress_callback(idx, len(domains), [], all_jobs)
-            finally:
-                # Close browser after each domain if RESET_BROWSER_EACH_DOMAIN is True
-                if RESET_BROWSER_EACH_DOMAIN and scraper:
-                    await scraper.shutdown()
-                    scraper = None
-
-    finally:
-        # Clean up scraper if using single browser mode
-        if not RESET_BROWSER_EACH_DOMAIN and scraper:
+        except Exception as e:
+            failed_count += 1
+            logger.error(
+                "❌ Domain failed",
+                extra={
+                    "domain": website,
+                    "error": str(e),
+                    "progress": f"{idx}/{len(domains)}"
+                },
+                exc_info=False
+            )
+            
+            # Call progress callback even on failure
+            if progress_callback:
+                await progress_callback(idx, len(domains), [], all_jobs)
+        finally:
+            # Always close browser after each domain
             await scraper.shutdown()
     
     duration = (datetime.utcnow() - start_time).total_seconds()
