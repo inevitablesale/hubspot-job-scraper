@@ -14,4 +14,4 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # Default command: run the web UI (control room)
 # Note: render.yaml overrides this with port binding
-CMD ["uvicorn", "control_room:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn control_room:app --host 0.0.0.0 --port ${PORT}"]
