@@ -11,7 +11,7 @@ import asyncio
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from scraper_engine import scrape_all_domains
 from notifier import JobNotifier
@@ -38,7 +38,7 @@ def get_domains_file() -> str:
     raise FileNotFoundError("Domains file not found")
 
 
-async def run_scraper(domains_file: Optional[str] = None, progress_callback=None) -> List[Dict]:
+async def run_scraper(domains_file: Optional[str] = None, progress_callback=None) -> Tuple[List[Dict], Optional[str]]:
     """
     Main scraper execution function.
     
@@ -49,7 +49,7 @@ async def run_scraper(domains_file: Optional[str] = None, progress_callback=None
         progress_callback: Optional callback for real-time progress updates
         
     Returns:
-        List of all jobs found across all domains
+        Tuple of (list of all jobs found, run_id if created)
     """
     start_time = datetime.utcnow()
     
@@ -66,7 +66,7 @@ async def run_scraper(domains_file: Optional[str] = None, progress_callback=None
         logger.info("Using domains file: %s", domains_file)
 
         # Run the scraper
-        jobs = await scrape_all_domains(domains_file, progress_callback=progress_callback)
+        jobs, run_id = await scrape_all_domains(domains_file, progress_callback=progress_callback)
         
         duration = (datetime.utcnow() - start_time).total_seconds()
 
@@ -74,6 +74,7 @@ async def run_scraper(domains_file: Optional[str] = None, progress_callback=None
             "✅ Scraping complete",
             extra={
                 "jobs_found": len(jobs),
+                "run_id": run_id,
                 "duration_seconds": round(duration, 2)
             }
         )
@@ -86,7 +87,7 @@ async def run_scraper(domains_file: Optional[str] = None, progress_callback=None
         else:
             logger.info("No jobs found to notify about")
         
-        return jobs
+        return jobs, run_id
 
     except Exception as e:
         duration = (datetime.utcnow() - start_time).total_seconds()
