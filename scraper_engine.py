@@ -71,6 +71,10 @@ ENABLE_HTML_ARCHIVE = os.getenv("ENABLE_HTML_ARCHIVE", "false").lower() == "true
 HTML_ARCHIVE_DIR = Path(os.getenv("HTML_ARCHIVE_DIR", "/tmp/html_archive"))
 JOB_TRACKING_CACHE = Path(os.getenv("JOB_TRACKING_CACHE", ".job_tracking.json"))
 
+# Default values for job fields
+DEFAULT_DEPARTMENT = "other"
+DEFAULT_ATS_PROVIDER = "hubspot"
+
 
 class JobScraper:
     """Main scraper engine using Playwright with enterprise features."""
@@ -215,7 +219,7 @@ class JobScraper:
                         prepared_job = {
                             "job_title": job.get("title") or job.get("job_title") or "Unknown",
                             "job_url": job.get("url") or job.get("job_url") or "",
-                            "department": job.get("department") or "other",
+                            "department": job.get("department") or DEFAULT_DEPARTMENT,
                             "location": job.get("location") or "",
                             "remote_type": job.get("remote_type") or job.get("location_type") or "",
                             "description": job.get("summary") or job.get("description") or "",
@@ -223,7 +227,7 @@ class JobScraper:
                             "scraped_at": job.get("timestamp") or batch_timestamp,
                             "hash": hashlib.sha256(f"{company_id}:{job.get('title', '')}:{job.get('url', '')}".encode()).hexdigest(),
                             "active": True,
-                            "ats_provider": job.get("ats_provider") or job.get("extraction_source") or "hubspot",
+                            "ats_provider": job.get("ats_provider") or job.get("extraction_source") or DEFAULT_ATS_PROVIDER,
                         }
                         prepared_jobs.append(prepared_job)
                     
