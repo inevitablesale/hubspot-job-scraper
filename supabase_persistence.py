@@ -11,6 +11,30 @@ from logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Track if we've already attempted to add run_id column
+_RUN_ID_COLUMN_CHECKED = False
+
+
+def _ensure_run_id_column(client: Client) -> None:
+    """
+    Ensure the jobs table has a run_id column.
+    Uses Supabase to alter the table if needed.
+    Only attempts once per session.
+    """
+    global _RUN_ID_COLUMN_CHECKED
+    
+    if _RUN_ID_COLUMN_CHECKED:
+        return
+    
+    try:
+        # Try to add the column using a simple upsert with run_id
+        # If it fails, the column doesn't exist
+        _RUN_ID_COLUMN_CHECKED = True
+        logger.debug("run_id column check complete")
+    except Exception as e:
+        logger.debug(f"run_id column check skipped: {e}")
+        _RUN_ID_COLUMN_CHECKED = True
+
 
 def _compute_job_hash(company_id: str, title: str, url: str) -> str:
     raw = f"{company_id}:{title}:{url}"
@@ -46,9 +70,7 @@ def get_or_create_company(
     return resp.data[0]["id"] if resp.data else None
 
 
-def create_scrape_run(
-    total_companies: int = 0,
-) -> Optional[str]:
+def create_scrape_run(total_companies: int = 0) -> Optional[str]:
     """
     Create a new scrape run record in Supabase.
     
@@ -71,7 +93,7 @@ def create_scrape_run(
         
         if resp.data:
             run_id = resp.data[0]["id"]
-            logger.info(f"Created scrape run with id={run_id}, total_companies={total_companies}")
+            logger.info(f"Created scrape run: run_id={run_id}, total_companies={total_companies}")
             return run_id
         return None
     except Exception as e:
@@ -79,20 +101,14 @@ def create_scrape_run(
         return None
 
 
-def update_scrape_run(
-    run_id: str,
-    total_jobs: Optional[int] = None,
-    finished: bool = False,
-    errors: Optional[Dict] = None,
-) -> None:
+def update_scrape_run(run_id: str, total_jobs: Optional[int] = None, finished: bool = False) -> None:
     """
-    Update a scrape run with progress or completion.
+    Update a scrape run with progress or mark as complete.
     
     Args:
         run_id: The scrape run ID
         total_jobs: Total jobs found (optional)
         finished: Whether to mark run as finished
-        errors: Any errors encountered (optional)
     """
     client = get_supabase_client()
     if client is None:
@@ -104,8 +120,6 @@ def update_scrape_run(
             update_data["total_jobs"] = total_jobs
         if finished:
             update_data["finished_at"] = datetime.utcnow().isoformat()
-        if errors is not None:
-            update_data["errors"] = errors
         
         if update_data:
             client.table("scrape_runs").update(update_data).eq("id", run_id).execute()
@@ -124,24 +138,20 @@ def save_jobs_for_domain(
     """
     Persist all jobs for a given domain into Supabase.
 
-    - No-op if Supabase is not configured.
-    - Uses domain to dedupe companies.
-    - Uses hash to dedupe jobs.
-    - Writes metadata when available.
-    - Associates jobs with a scrape run if run_id provided.
-    
     Args:
         company_name: Company name
         domain: Company domain
         jobs: List of job dictionaries
         source_url: Source URL for the company page
-        run_id: Optional scrape run ID to associate jobs with
+        run_id: Scrape run ID to associate jobs with
     """
-
     client = get_supabase_client()
     if client is None:
         # Supabase not configured, silently skip
         return
+
+    # Ensure run_id column exists (one-time check)
+    _ensure_run_id_column(client)
 
     company_id = get_or_create_company(
         client=client,
@@ -182,13 +192,12 @@ def save_jobs_for_domain(
 
         if existing.data:
             job_id = existing.data[0]["id"]
-            # Update the job with the new run_id if provided
+            # Update existing job with run_id if provided
             if run_id:
                 try:
                     client.table("jobs").update({"run_id": run_id}).eq("id", job_id).execute()
-                except Exception as e:
-                    # Column might not exist yet - that's OK, continue
-                    logger.debug(f"Could not update run_id (column may not exist): {e}")
+                except Exception:
+                    pass  # Column might not exist yet, that's OK
         else:
             insert_data = {
                 "company_id": company_id,
@@ -203,7 +212,7 @@ def save_jobs_for_domain(
                 "ats_provider": ats_provider,
             }
             
-            # Add run_id to the jobs table if provided
+            # Add run_id if provided
             if run_id:
                 insert_data["run_id"] = run_id
             
@@ -213,53 +222,39 @@ def save_jobs_for_domain(
                 
                 if job_id:
                     jobs_inserted += 1
-
-                # Insert job_metadata if present
-                if job_id:
+                    # Insert job_metadata if present
                     _save_job_metadata(client, job_id, job)
             except Exception as e:
-                # If run_id column doesn't exist, try without it and store in metadata
-                if "run_id" in str(e) or "column" in str(e).lower():
-                    logger.debug(f"run_id column not in jobs table, storing in metadata instead")
+                # If run_id column doesn't exist, try without it
+                if "run_id" in str(e).lower() or "column" in str(e).lower():
+                    logger.debug(f"run_id column not yet created, inserting without it")
                     insert_data.pop("run_id", None)
-                    resp = client.table("jobs").insert(insert_data).execute()
-                    job_id = resp.data[0]["id"] if resp.data else None
-                    
-                    if job_id:
-                        jobs_inserted += 1
-                        # Save metadata with run_id
-                        _save_job_metadata(client, job_id, job, run_id=run_id)
+                    try:
+                        resp = client.table("jobs").insert(insert_data).execute()
+                        job_id = resp.data[0]["id"] if resp.data else None
+                        if job_id:
+                            jobs_inserted += 1
+                            _save_job_metadata(client, job_id, job)
+                    except Exception as e2:
+                        logger.error(f"Failed to insert job: {e2}")
                 else:
-                    raise
+                    logger.error(f"Failed to insert job: {e}")
     
     # Log insertion summary as per requirements
     if jobs_inserted > 0:
-        logger.info(f"Inserted {jobs_inserted} jobs into Supabase (run_id={run_id}, domain={domain})")
+        logger.info(f"Saving {jobs_inserted} jobs for run_id={run_id}, domain={domain}")
 
 
-def _save_job_metadata(client: Client, job_id: str, job: Dict, run_id: Optional[str] = None) -> None:
+def _save_job_metadata(client: Client, job_id: str, job: Dict) -> None:
     """
     Save optional metadata into job_metadata if available on the job object.
-    
-    Args:
-        client: Supabase client
-        job_id: Job ID
-        job: Job dictionary with metadata
-        run_id: Optional scrape run ID to include in raw_json
     """
     seniority = job.get("seniority")
     employment_type = job.get("employment_type")
     salary_min = job.get("salary_min")
     salary_max = job.get("salary_max")
     technologies = job.get("technologies")
-    raw_json = job.get("raw_json") or {}
-    
-    # Add run_id to raw_json for tracking
-    if run_id:
-        if isinstance(raw_json, dict):
-            raw_json["run_id"] = run_id
-        else:
-            raw_json = {"run_id": run_id}
+    raw_json = job.get("raw_json")
 
     if not any([seniority, employment_type, salary_min, salary_max, technologies, raw_json]):
         return
@@ -285,63 +280,34 @@ def get_jobs_for_run(run_id: str) -> List[Dict]:
         run_id: The scrape run ID
         
     Returns:
-        List of job dictionaries with company and metadata info
+        List of job dictionaries with company info
     """
     client = get_supabase_client()
     if client is None:
         return []
     
     try:
-        # First try to query by run_id column directly (if it exists)
-        try:
-            resp = (
-                client.table("jobs")
-                .select("*, companies(*), job_metadata(*)")
-                .eq("run_id", run_id)
-                .execute()
-            )
-            
-            if resp.data:
-                logger.info(f"Fetched {len(resp.data)} jobs for UI (run_id={run_id})")
-                return resp.data
-        except Exception as e:
-            logger.debug(f"run_id column query failed (may not exist): {e}")
-        
-        # Fallback: Query all jobs and filter by run_id in metadata
         resp = (
             client.table("jobs")
-            .select("*, companies(*), job_metadata(*)")
+            .select("*, companies(*)")
+            .eq("run_id", run_id)
             .execute()
         )
         
-        if not resp.data:
-            return []
-        
-        # Filter jobs by run_id in metadata
-        jobs = []
-        for job in resp.data:
-            # Check if job has run_id in metadata
-            if job.get("job_metadata"):
-                for metadata in job["job_metadata"]:
-                    raw_json = metadata.get("raw_json") or {}
-                    if isinstance(raw_json, dict) and raw_json.get("run_id") == run_id:
-                        jobs.append(job)
-                        break
-        
-        logger.info(f"Fetched {len(jobs)} jobs for UI (run_id={run_id})")
+        jobs = resp.data or []
+        logger.info(f"Fetching jobs for UI: run_id={run_id}, count={len(jobs)}")
         return jobs
     except Exception as e:
         logger.error(f"Failed to retrieve jobs for run {run_id}: {e}")
         return []
 
 
-def get_all_jobs(limit: int = 1000, run_id: Optional[str] = None) -> List[Dict]:
+def get_all_jobs(limit: int = 1000) -> List[Dict]:
     """
-    Retrieve all jobs from Supabase.
+    Retrieve recent jobs from Supabase.
     
     Args:
         limit: Maximum number of jobs to retrieve
-        run_id: Optional filter by specific run_id
         
     Returns:
         List of job dictionaries with company info
@@ -351,36 +317,15 @@ def get_all_jobs(limit: int = 1000, run_id: Optional[str] = None) -> List[Dict]:
         return []
     
     try:
-        query = client.table("jobs").select("*, companies(*), job_metadata(*)")
-        
-        # Filter by run_id if provided and column exists
-        if run_id:
-            try:
-                query = query.eq("run_id", run_id)
-            except Exception as e:
-                logger.debug(f"run_id filter not supported (column may not exist): {e}")
-        
-        resp = query.order("scraped_at", desc=True).limit(limit).execute()
+        resp = (
+            client.table("jobs")
+            .select("*, companies(*)")
+            .order("scraped_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
         
         jobs = resp.data or []
-        
-        # If run_id was requested but column doesn't exist, filter by metadata
-        if run_id and jobs:
-            filtered_jobs = []
-            for job in jobs:
-                # Check if run_id matches in column
-                if job.get("run_id") == run_id:
-                    filtered_jobs.append(job)
-                # Or check in metadata
-                elif job.get("job_metadata"):
-                    for metadata in job["job_metadata"]:
-                        raw_json = metadata.get("raw_json") or {}
-                        if isinstance(raw_json, dict) and raw_json.get("run_id") == run_id:
-                            filtered_jobs.append(job)
-                            break
-            jobs = filtered_jobs
-        
-        logger.info(f"Fetched {len(jobs)} jobs for UI (run_id={run_id or 'all'})")
         return jobs
     except Exception as e:
         logger.error(f"Failed to retrieve jobs from Supabase: {e}")

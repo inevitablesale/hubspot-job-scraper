@@ -59,7 +59,7 @@ class CrawlStatus:
         self.domains_processed = 0
         self.jobs_found = 0
         self.last_error = None
-        # Note: Don't clear recent_jobs here anymore - they're persisted in Supabase
+        # Keep recent_jobs for backward compat, but UI reads from Supabase
         self.paused = False
         self.stop_requested = False
         self.current_run_id = None
@@ -185,18 +185,7 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
                 return
             
             # Run scraper with progress callback
-            # The scraper will create a run_id and return it in the jobs metadata
             jobs = await run_scraper(progress_callback=progress_update)
-            
-            # Extract run_id from the first job if available
-            if jobs and len(jobs) > 0:
-                first_job = jobs[0]
-                # Try to get run_id from job metadata or raw_json
-                if isinstance(first_job, dict):
-                    run_id = first_job.get("run_id") or first_job.get("raw_json", {}).get("run_id")
-                    if run_id:
-                        crawl_status.current_run_id = run_id
-                        logger.info(f"Stored current_run_id: {run_id}")
             
             # Check if stop was requested during execution
             if crawl_status.stop_requested:
@@ -205,15 +194,17 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
                 logger.info("Crawl stopped by user request")
                 return
             
-            # Update status (final values, redundant with progress_update but ensures correctness)
+            # Update status
             crawl_status.jobs_found = len(jobs)
-            crawl_status.recent_jobs = jobs[-50:]  # Keep last 50
+            # Keep small sample in memory for backward compat, but UI reads from Supabase
+            if jobs:
+                crawl_status.recent_jobs = jobs[-50:]
             crawl_status.state = CrawlerState.COMPLETED
             crawl_status.last_run_finished_at = datetime.utcnow().isoformat() + "Z"
             
             logger.info(
                 "✅ Control room crawl completed successfully",
-                extra={"jobs_found": len(jobs), "run_id": crawl_status.current_run_id}
+                extra={"jobs_found": len(jobs)}
             )
         
         finally:
@@ -499,18 +490,16 @@ def _get_recent_logs(limit: int) -> dict:
 
 def _get_recent_jobs() -> dict:
     """
-    Helper function to get recent job results.
+    Helper function to get recent job results from Supabase.
     
-    First tries to get jobs from Supabase (persistent).
-    Falls back to in-memory if Supabase is not configured.
+    Returns jobs from Supabase database (persistent storage).
+    Falls back to in-memory only if Supabase is unavailable.
     
     Returns:
         Dictionary with jobs array and count
     """
-    # Try to get jobs from Supabase first
-    # If we have a current run_id, use it; otherwise get all recent jobs
-    run_id = crawl_status.current_run_id
-    jobs_from_db = get_all_jobs(limit=500, run_id=run_id)
+    # Try to get jobs from Supabase (persistent)
+    jobs_from_db = get_all_jobs(limit=500)
     
     if jobs_from_db:
         # Transform Supabase job format to UI format
@@ -531,22 +520,19 @@ def _get_recent_jobs() -> dict:
                 "scraped_at": job.get("scraped_at"),
             })
         
-        logger.info(f"Fetched {len(formatted_jobs)} jobs for UI (run_id={run_id or 'all'})")
         return {
             "jobs": formatted_jobs,
             "count": len(formatted_jobs)
         }
     
-    # Fallback to in-memory jobs (backward compatibility)
-    # Only return in-memory jobs if there are any AND Supabase returned nothing
+    # Fallback to in-memory jobs if Supabase unavailable
     if crawl_status.recent_jobs:
-        logger.debug(f"Returning {len(crawl_status.recent_jobs)} jobs from memory")
         return {
             "jobs": crawl_status.recent_jobs,
             "count": len(crawl_status.recent_jobs)
         }
     
-    # Return empty result - don't return stale data
+    # Return empty only if nothing available
     return {
         "jobs": [],
         "count": 0
