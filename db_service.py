@@ -16,7 +16,7 @@ Key principles:
 
 import hashlib
 from datetime import datetime
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 from uuid import UUID
 from supabase_client import get_supabase_client
 from db_models import Company, Job, JobMetadata, ATSSource, ScrapeRun, JobHistory
@@ -134,7 +134,7 @@ class DatabaseService:
         description: Optional[str] = None,
         posted_at: Optional[datetime] = None,
         ats_provider: Optional[str] = None
-    ) -> Optional[tuple[UUID, bool]]:
+    ) -> Optional[Tuple[UUID, bool]]:
         """
         Get existing job by hash or create a new one.
         
