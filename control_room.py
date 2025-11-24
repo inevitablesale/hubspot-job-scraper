@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from logging_config import setup_logging, get_logger
 from main import run_scraper, get_domains_file
+from supabase_persistence import get_all_jobs, get_jobs_for_run
 
 # Setup logging
 logger = setup_logging("control_room")
@@ -51,15 +52,17 @@ class CrawlStatus:
         self.log_buffer: deque = deque(maxlen=500)  # Keep last 500 log lines
         self.paused: bool = False
         self.stop_requested: bool = False
+        self.current_run_id: Optional[str] = None  # Track current scrape run ID
     
     def reset_run(self):
         """Reset run-specific metrics."""
         self.domains_processed = 0
         self.jobs_found = 0
         self.last_error = None
-        self.recent_jobs = []
+        # Note: Don't clear recent_jobs here anymore - they're persisted in Supabase
         self.paused = False
         self.stop_requested = False
+        self.current_run_id = None
     
     def to_dict(self) -> Dict:
         """Convert status to dictionary."""
@@ -71,7 +74,8 @@ class CrawlStatus:
             "domains_processed": self.domains_processed,
             "jobs_found": self.jobs_found,
             "last_error": self.last_error,
-            "paused": self.paused
+            "paused": self.paused,
+            "current_run_id": self.current_run_id
         }
 
 
@@ -135,6 +139,7 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
         """
         crawl_status.domains_processed = domain_idx
         crawl_status.jobs_found = len(all_jobs)
+        # Keep a small sample in memory for backward compatibility
         crawl_status.recent_jobs = all_jobs[-50:]  # Keep last 50
     
     try:
@@ -180,7 +185,18 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
                 return
             
             # Run scraper with progress callback
+            # The scraper will create a run_id and return it in the jobs metadata
             jobs = await run_scraper(progress_callback=progress_update)
+            
+            # Extract run_id from the first job if available
+            if jobs and len(jobs) > 0:
+                first_job = jobs[0]
+                # Try to get run_id from job metadata or raw_json
+                if isinstance(first_job, dict):
+                    run_id = first_job.get("run_id") or first_job.get("raw_json", {}).get("run_id")
+                    if run_id:
+                        crawl_status.current_run_id = run_id
+                        logger.info(f"Stored current_run_id: {run_id}")
             
             # Check if stop was requested during execution
             if crawl_status.stop_requested:
@@ -197,7 +213,7 @@ async def run_scraper_background(role_filter: Optional[str] = None, remote_only:
             
             logger.info(
                 "✅ Control room crawl completed successfully",
-                extra={"jobs_found": len(jobs)}
+                extra={"jobs_found": len(jobs), "run_id": crawl_status.current_run_id}
             )
         
         finally:
@@ -485,12 +501,55 @@ def _get_recent_jobs() -> dict:
     """
     Helper function to get recent job results.
     
+    First tries to get jobs from Supabase (persistent).
+    Falls back to in-memory if Supabase is not configured.
+    
     Returns:
         Dictionary with jobs array and count
     """
+    # Try to get jobs from Supabase first
+    # If we have a current run_id, use it; otherwise get all recent jobs
+    run_id = crawl_status.current_run_id
+    jobs_from_db = get_all_jobs(limit=500, run_id=run_id)
+    
+    if jobs_from_db:
+        # Transform Supabase job format to UI format
+        formatted_jobs = []
+        for job in jobs_from_db:
+            company = job.get("companies") or {}
+            formatted_jobs.append({
+                "id": job.get("id"),
+                "title": job.get("job_title"),
+                "company": company.get("name", "Unknown"),
+                "domain": company.get("domain", ""),
+                "url": job.get("job_url"),
+                "location": job.get("location"),
+                "remote_type": job.get("remote_type"),
+                "department": job.get("department"),
+                "description": job.get("description"),
+                "ats_provider": job.get("ats_provider"),
+                "scraped_at": job.get("scraped_at"),
+            })
+        
+        logger.info(f"Fetched {len(formatted_jobs)} jobs for UI (run_id={run_id or 'all'})")
+        return {
+            "jobs": formatted_jobs,
+            "count": len(formatted_jobs)
+        }
+    
+    # Fallback to in-memory jobs (backward compatibility)
+    # Only return in-memory jobs if there are any AND Supabase returned nothing
+    if crawl_status.recent_jobs:
+        logger.debug(f"Returning {len(crawl_status.recent_jobs)} jobs from memory")
+        return {
+            "jobs": crawl_status.recent_jobs,
+            "count": len(crawl_status.recent_jobs)
+        }
+    
+    # Return empty result - don't return stale data
     return {
-        "jobs": crawl_status.recent_jobs,
-        "count": len(crawl_status.recent_jobs)
+        "jobs": [],
+        "count": 0
     }
 
 
