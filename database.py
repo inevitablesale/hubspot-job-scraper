@@ -47,6 +47,35 @@ class SupabaseDatabase:
                 logger.error(f"Failed to initialize Supabase client: {e}")
                 self.enabled = False
     
+    def _parse_job_from_row(self, row: dict) -> Optional[JobItem]:
+        """
+        Parse a JobItem from a database row.
+        
+        Args:
+            row: Dictionary from database query
+            
+        Returns:
+            JobItem or None if parsing fails
+        """
+        try:
+            # Parse datetime string
+            created_at = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
+            
+            return JobItem(
+                id=row["id"],
+                domain=row["domain"],
+                title=row["title"],
+                location=row.get("location"),
+                remote_type=row.get("remote_type"),
+                url=row["url"],
+                source_page=row["source_page"],
+                ats=row.get("ats"),
+                created_at=created_at
+            )
+        except Exception as e:
+            logger.error(f"Failed to parse job from database: {e}")
+            return None
+    
     async def save_job(self, job: JobItem) -> bool:
         """
         Save a job to the database.
@@ -123,25 +152,9 @@ class SupabaseDatabase:
             
             jobs = []
             for row in response.data:
-                try:
-                    # Parse datetime string
-                    created_at = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
-                    
-                    job = JobItem(
-                        id=row["id"],
-                        domain=row["domain"],
-                        title=row["title"],
-                        location=row.get("location"),
-                        remote_type=row.get("remote_type"),
-                        url=row["url"],
-                        source_page=row["source_page"],
-                        ats=row.get("ats"),
-                        created_at=created_at
-                    )
+                job = self._parse_job_from_row(row)
+                if job:
                     jobs.append(job)
-                except Exception as e:
-                    logger.error(f"Failed to parse job from database: {e}")
-                    continue
             
             logger.info(f"Loaded {len(jobs)} jobs from database")
             return jobs
@@ -184,24 +197,9 @@ class SupabaseDatabase:
             
             jobs = []
             for row in response.data:
-                try:
-                    created_at = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
-                    
-                    job = JobItem(
-                        id=row["id"],
-                        domain=row["domain"],
-                        title=row["title"],
-                        location=row.get("location"),
-                        remote_type=row.get("remote_type"),
-                        url=row["url"],
-                        source_page=row["source_page"],
-                        ats=row.get("ats"),
-                        created_at=created_at
-                    )
+                job = self._parse_job_from_row(row)
+                if job:
                     jobs.append(job)
-                except Exception as e:
-                    logger.error(f"Failed to parse job from database: {e}")
-                    continue
             
             return jobs
             
