@@ -1086,7 +1086,7 @@
             try {
                 const response = await fetch('/api/logs?limit=100');
                 const data = await response.json();
-                updateLogs(data);
+                updateLogs(data.logs || []);
             } catch (error) {
                 console.error('Failed to fetch logs:', error);
             }
@@ -1096,7 +1096,7 @@
             try {
                 const response = await fetch('/api/jobs');
                 const data = await response.json();
-                state.jobs = data;
+                state.jobs = data.jobs || [];
                 updateJobsTable();
             } catch (error) {
                 console.error('Failed to fetch jobs:', error);
