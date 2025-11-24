@@ -11,7 +11,7 @@ import asyncio
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 from scraper_engine import scrape_all_domains
 from notifier import JobNotifier
@@ -38,7 +38,7 @@ def get_domains_file() -> str:
     raise FileNotFoundError("Domains file not found")
 
 
-async def run_scraper(domains_file: Optional[str] = None, progress_callback=None) -> tuple[List[Dict], Optional[str]]:
+async def run_scraper(domains_file: Optional[str] = None, progress_callback=None) -> Tuple[List[Dict], Optional[str]]:
     """
     Main scraper execution function.
     

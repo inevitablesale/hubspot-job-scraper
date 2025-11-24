@@ -149,6 +149,9 @@ def save_jobs_for_domain(
         logger.error("run_id and company_id are required for save_jobs_for_domain")
         return
 
+    # Compute default timestamp once for consistency across batch
+    default_scraped_at = datetime.utcnow().isoformat()
+
     jobs_inserted = 0
     for job in jobs:
         # Extract guaranteed fields from job dict
@@ -173,7 +176,7 @@ def save_jobs_for_domain(
         if isinstance(scraped_at, datetime):
             scraped_at_iso = scraped_at.isoformat()
         else:
-            scraped_at_iso = scraped_at or datetime.utcnow().isoformat()
+            scraped_at_iso = scraped_at or default_scraped_at
 
         # If hash not provided, compute it
         if not job_hash:

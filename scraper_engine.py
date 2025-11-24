@@ -12,7 +12,7 @@ import logging
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urljoin, urlparse
 
 from playwright.async_api import async_playwright, Browser, Page, TimeoutError as PlaywrightTimeout
@@ -208,6 +208,8 @@ class JobScraper:
                 
                 if company_id:
                     # Prepare jobs with all required fields
+                    # Use single timestamp for all jobs in this batch for consistency
+                    batch_timestamp = datetime.utcnow().isoformat()
                     prepared_jobs = []
                     for job in domain_jobs:
                         prepared_job = {
@@ -218,7 +220,7 @@ class JobScraper:
                             "remote_type": job.get("remote_type") or job.get("location_type") or "",
                             "description": job.get("summary") or job.get("description") or "",
                             "posted_at": job.get("posted_at"),
-                            "scraped_at": job.get("timestamp") or datetime.utcnow().isoformat(),
+                            "scraped_at": job.get("timestamp") or batch_timestamp,
                             "hash": hashlib.sha256(f"{company_id}:{job.get('title', '')}:{job.get('url', '')}".encode()).hexdigest(),
                             "active": True,
                             "ats_provider": job.get("ats_provider") or job.get("extraction_source") or "hubspot",
@@ -784,7 +786,7 @@ class JobScraper:
             return False
 
 
-async def scrape_all_domains(domains_file: str, progress_callback=None) -> tuple[List[Dict], Optional[str]]:
+async def scrape_all_domains(domains_file: str, progress_callback=None) -> Tuple[List[Dict], Optional[str]]:
     """
     Scrape all domains from a JSON file.
 
