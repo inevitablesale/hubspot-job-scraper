@@ -70,6 +70,9 @@ ENABLE_HTML_ARCHIVE = os.getenv("ENABLE_HTML_ARCHIVE", "false").lower() == "true
 HTML_ARCHIVE_DIR = Path(os.getenv("HTML_ARCHIVE_DIR", "/tmp/html_archive"))
 JOB_TRACKING_CACHE = Path(os.getenv("JOB_TRACKING_CACHE", ".job_tracking.json"))
 
+# Browser reset configuration - prevents Chromium memory buildup
+RESET_BROWSER_EACH_DOMAIN = True
+
 
 class JobScraper:
     """Main scraper engine using Playwright with enterprise features."""
@@ -768,13 +771,15 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
         }
     )
 
-    # Initialize scraper
-    scraper = JobScraper()
-    await scraper.initialize()
-
     all_jobs = []
     success_count = 0
     failed_count = 0
+
+    # Initialize scraper once if not resetting per domain
+    scraper = None
+    if not RESET_BROWSER_EACH_DOMAIN:
+        scraper = JobScraper()
+        await scraper.initialize()
 
     try:
         # Scrape each domain
@@ -795,6 +800,11 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                 len(domains),
                 extra={"domain": website, "company": company_name}
             )
+
+            # Create new scraper instance per domain if RESET_BROWSER_EACH_DOMAIN is True
+            if RESET_BROWSER_EACH_DOMAIN:
+                scraper = JobScraper()
+                await scraper.initialize()
 
             try:
                 jobs = await scraper.scrape_domain(website, company_name)
@@ -838,9 +848,15 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> List[
                 # Call progress callback even on failure
                 if progress_callback:
                     await progress_callback(idx, len(domains), [], all_jobs)
+            finally:
+                # Close browser after each domain if RESET_BROWSER_EACH_DOMAIN is True
+                if RESET_BROWSER_EACH_DOMAIN and scraper:
+                    await scraper.shutdown()
 
     finally:
-        await scraper.shutdown()
+        # Clean up scraper if using single browser mode
+        if not RESET_BROWSER_EACH_DOMAIN and scraper:
+            await scraper.shutdown()
     
     duration = (datetime.utcnow() - start_time).total_seconds()
     
