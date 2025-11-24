@@ -341,7 +341,7 @@ class JobScraper:
                             root_domain,
                             depth + 1,
                             jobs_list,
-                            page=None  # Force new page for each URL to maintain isolation
+                            page=None  # Force new page for each recursive URL to maintain isolation
                         )
                         # If we found jobs, stop crawling (per requirements)
                         if jobs_list:
