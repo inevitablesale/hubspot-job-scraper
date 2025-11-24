@@ -48,6 +48,33 @@ An enterprise-grade domain-level job intelligence system that crawls company web
   - Company health trend
   - Timestamp
 * Sends jobs into **notifier pipelines** (ntfy, Slack, future: HubSpot sync)
+* **Supabase integration** - Stores all scraped data in PostgreSQL database with complete schema
+
+## Database Integration (Supabase)
+
+The scraper now includes **optional Supabase integration** for persistent storage of job data. When configured, all scraped data is automatically saved to a PostgreSQL database.
+
+### Features
+
+- **Company deduplication** by domain
+- **Job deduplication** by hash (company_id + title + url)
+- **Job metadata** storage (seniority, employment type, technologies)
+- **ATS source tracking** with provider information
+- **Scrape run logging** with metrics and errors
+- **Job history** snapshots for change tracking
+- **Graceful degradation** - works without database
+
+### Quick Setup
+
+1. Create a Supabase project at [supabase.com](https://supabase.com)
+2. Run the SQL schema from `SUPABASE_INTEGRATION.md`
+3. Set environment variables:
+   ```bash
+   export SUPABASE_URL="https://your-project.supabase.co"
+   export SUPABASE_KEY="your-service-role-key"
+   ```
+
+See **[SUPABASE_INTEGRATION.md](SUPABASE_INTEGRATION.md)** for complete setup instructions, schema details, and usage examples.
 
 ## Architecture
 
@@ -182,6 +209,11 @@ This runs the crawler with the same dataset rules and notification pipeline, the
 ## Configuration via environment variables
 
 Most behavior can be tuned without touching the code:
+
+**Database Integration**
+
+* `SUPABASE_URL` – Supabase project URL (e.g., `https://your-project.supabase.co`). Required for database integration.
+* `SUPABASE_KEY` – Supabase service role key. Required for database integration.
 
 **Core data / crawl**
 

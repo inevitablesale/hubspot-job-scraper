@@ -39,6 +39,7 @@ from extraction_utils import (
 )
 from blacklist import DomainBlacklist
 from logging_config import get_logger
+from supabase_persistence import save_jobs_for_domain
 
 logger = get_logger(__name__)
 
@@ -183,6 +184,26 @@ class JobScraper:
             # Attach health analysis to company metadata
             for job in domain_jobs:
                 job['company_health'] = health_analysis
+        
+        # Save jobs to Supabase (if configured)
+        try:
+            # Extract clean domain from URL
+            parsed = urlparse(domain_url)
+            domain = parsed.netloc
+            if domain.startswith('www.'):
+                domain = domain[4:]
+            
+            save_jobs_for_domain(
+                company_name=company_name,
+                domain=domain,
+                jobs=domain_jobs,
+                source_url=domain_url,
+            )
+        except Exception as e:
+            self.logger.error(
+                "Error saving jobs to Supabase",
+                extra={"domain": domain_url, "error": str(e)},
+            )
         
         return domain_jobs
 
