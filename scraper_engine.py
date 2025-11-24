@@ -286,6 +286,8 @@ class JobScraper:
             # Use provided page for first page, or create a new one
             page_created_here = False
             if page is None:
+                if not self.browser:
+                    raise RuntimeError("Browser not initialized. Call initialize() first.")
                 page = await self.browser.new_page()
                 page_created_here = True
             
@@ -337,7 +339,7 @@ class JobScraper:
                             root_domain,
                             depth + 1,
                             jobs_list,
-                            page=None  # Always create new page for recursive calls
+                            page=None  # Force new page creation for recursive calls
                         )
                         # If we found jobs, stop crawling (per requirements)
                         if jobs_list:

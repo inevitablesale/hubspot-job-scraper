@@ -172,9 +172,6 @@ async def test_context_cleanup_on_error():
         await page.close()
         await context.close()
         
-        # Should not raise an error
-        assert True
-        
     finally:
         await scraper.shutdown()
 
@@ -189,12 +186,13 @@ def test_page_parameter_type_hints():
     # Get type hints for scrape_domain
     hints = get_type_hints(scraper.scrape_domain)
     
-    # Verify page parameter has correct type hint (Optional[Page])
-    assert 'page' in hints
-    # The hint should be Optional[Page]
-    # We can't easily check the exact type without importing playwright types
-    # But we can verify it exists
+    # Verify page parameter exists in type hints
+    assert 'page' in hints, "page parameter should have type hint"
     
+    # Verify the parameter is in the signature
+    sig = inspect.signature(scraper.scrape_domain)
+    assert 'page' in sig.parameters, "page parameter should be in signature"
+    assert sig.parameters['page'].default is None, "page parameter should default to None"
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
