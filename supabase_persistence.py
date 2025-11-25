@@ -1,5 +1,6 @@
 # supabase_persistence.py
 import hashlib
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -118,6 +119,7 @@ def save_jobs_for_domain(
     run_id: str,
     company_id: str,
     jobs: List[Dict],
+    domain: str = "",
 ) -> None:
     """
     Persist all jobs for a given domain into Supabase.
@@ -139,6 +141,7 @@ def save_jobs_for_domain(
               - hash
               - active
               - ats_provider
+        domain: Domain name for logging (optional)
     """
     client = get_supabase_client()
     if client is None:
@@ -207,39 +210,102 @@ def save_jobs_for_domain(
                 jobs_inserted += 1
                 # Insert job_metadata if present
                 _save_job_metadata(client, job_id, job)
+                # Insert job_history snapshot
+                _save_job_history(client, job_id, job)
+                # Insert ats_sources if ATS data available
+                _save_ats_source(client, job_id, job)
         except Exception as e:
             logger.error(f"Failed to insert job: {e}")
     
     # Log insertion summary as per requirements
     if jobs_inserted > 0:
-        logger.info(f"Saved {jobs_inserted} jobs for run_id={run_id}, company_id={company_id}")
+        logger.info(f"[SUPABASE] Saved {jobs_inserted} jobs | domain={domain} run_id={run_id}")
 
 
 def _save_job_metadata(client: Client, job_id: str, job: Dict) -> None:
     """
     Save optional metadata into job_metadata if available on the job object.
+    Errors are logged but never thrown.
     """
-    seniority = job.get("seniority")
-    employment_type = job.get("employment_type")
-    salary_min = job.get("salary_min")
-    salary_max = job.get("salary_max")
-    technologies = job.get("technologies")
-    raw_json = job.get("raw_json")
+    try:
+        seniority = job.get("seniority")
+        employment_type = job.get("employment_type")
+        salary_min = job.get("salary_min")
+        salary_max = job.get("salary_max")
+        technologies = job.get("technologies")
+        raw_json = job.get("raw_json")
 
-    if not any([seniority, employment_type, salary_min, salary_max, technologies, raw_json]):
-        return
+        if not any([seniority, employment_type, salary_min, salary_max, technologies, raw_json]):
+            return
 
-    insert_data = {
-        "job_id": job_id,
-        "seniority": seniority,
-        "employment_type": employment_type,
-        "salary_min": salary_min,
-        "salary_max": salary_max,
-        "technologies": technologies,
-        "raw_json": raw_json,
-    }
+        insert_data = {
+            "job_id": job_id,
+            "seniority": seniority,
+            "employment_type": employment_type,
+            "salary_min": salary_min,
+            "salary_max": salary_max,
+            "technologies": technologies,
+            "raw_json": raw_json,
+        }
 
-    client.table("job_metadata").insert(insert_data).execute()
+        client.table("job_metadata").insert(insert_data).execute()
+    except Exception as e:
+        logger.error(f"Failed to save job metadata for job_id={job_id}: {e}")
+
+
+def _save_job_history(client: Client, job_id: str, job: Dict) -> None:
+    """
+    Save job snapshot into job_history for historical tracking.
+    Errors are logged but never thrown.
+    """
+    try:
+        # Build snapshot from the job data
+        snapshot = {
+            "job_title": job.get("job_title") or job.get("title"),
+            "job_url": job.get("job_url") or job.get("url"),
+            "department": job.get("department"),
+            "location": job.get("location"),
+            "remote_type": job.get("remote_type"),
+            "description": job.get("description"),
+            "ats_provider": job.get("ats_provider"),
+            "hash": job.get("hash"),
+            "active": job.get("active", True),
+        }
+        
+        insert_data = {
+            "job_id": job_id,
+            "snapshot": json.dumps(snapshot),
+            "captured_at": datetime.utcnow().isoformat(),
+        }
+        
+        client.table("job_history").insert(insert_data).execute()
+    except Exception as e:
+        logger.error(f"Failed to save job history for job_id={job_id}: {e}")
+
+
+def _save_ats_source(client: Client, job_id: str, job: Dict) -> None:
+    """
+    Save ATS source data into ats_sources if available.
+    Errors are logged but never thrown.
+    """
+    try:
+        ats_provider = job.get("ats_provider")
+        raw_html = job.get("raw_html")
+        
+        # Only insert if we have ATS provider info
+        if not ats_provider:
+            return
+        
+        insert_data = {
+            "job_id": job_id,
+            "provider": ats_provider,
+            "raw_html": raw_html,
+            "detected_at": datetime.utcnow().isoformat(),
+        }
+        
+        client.table("ats_sources").insert(insert_data).execute()
+    except Exception as e:
+        logger.error(f"Failed to save ATS source for job_id={job_id}: {e}")
 
 
 def get_jobs_for_run(run_id: str) -> List[Dict]:
