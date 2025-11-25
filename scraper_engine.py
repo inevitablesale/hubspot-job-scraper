@@ -794,6 +794,9 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> Tuple
     """
     Scrape all domains from a JSON file.
 
+    The browser is restarted every 5 domains to improve memory usage and stability
+    for jobs running in low-resource environments like Render Starter.
+
     Args:
         domains_file: Path to JSON file with domain list
         progress_callback: Optional callback function called after each domain with
@@ -829,99 +832,115 @@ async def scrape_all_domains(domains_file: str, progress_callback=None) -> Tuple
     success_count = 0
     failed_count = 0
 
-    # Create a single scraper instance for all domains
+    # Batch size for browser restarts
+    BATCH_SIZE = 5
+
+    # Create a single scraper instance (browser lifecycle managed per batch)
     scraper = JobScraper()
-    await scraper.initialize()
 
-    try:
-        # Scrape each domain with a new browser context
-        for idx, domain_data in enumerate(domains, 1):
-            website = domain_data.get('website')
-            company_name = domain_data.get('title', website)
+    # Process domains in batches of BATCH_SIZE
+    total_domains = len(domains)
+    for batch_start in range(0, total_domains, BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, total_domains)
+        batch_domains = domains[batch_start:batch_end]
 
-            if not website:
-                logger.warning(
-                    "Skipping entry with no website",
-                    extra={"index": idx, "data": domain_data}
+        # Log browser startup for this batch (1-indexed for user-facing logs)
+        logger.info(f"Starting browser for batch {batch_start + 1}-{batch_end}")
+        await scraper.initialize()
+
+        try:
+            # Scrape each domain in this batch with a new browser context
+            for batch_idx, domain_data in enumerate(batch_domains):
+                # Global 1-indexed position for this domain
+                idx = batch_start + batch_idx + 1
+                
+                website = domain_data.get('website')
+                company_name = domain_data.get('title', website)
+
+                if not website:
+                    logger.warning(
+                        "Skipping entry with no website",
+                        extra={"index": idx, "data": domain_data}
+                    )
+                    continue
+
+                logger.info(
+                    "🌐 Starting domain [%d/%d]",
+                    idx,
+                    total_domains,
+                    extra={"domain": website, "company": company_name}
                 )
-                continue
 
-            logger.info(
-                "🌐 Starting domain [%d/%d]",
-                idx,
-                len(domains),
-                extra={"domain": website, "company": company_name}
-            )
-
-            # Create a new isolated browser context for this domain
-            context = None
-            page = None
-            try:
-                context = await scraper.browser.new_context()
-                page = await context.new_page()
-                
-                # Scrape the domain using the isolated context's page, passing run_id
-                jobs = await scraper.scrape_domain(website, company_name, page=page, run_id=run_id)
-                all_jobs.extend(jobs)
-                
-                if jobs:
-                    success_count += 1
-                    logger.info(
-                        "✅ Domain complete",
-                        extra={
-                            "domain": website,
-                            "jobs_found": len(jobs),
-                            "progress": f"{idx}/{len(domains)}"
-                        }
-                    )
-                else:
-                    logger.info(
-                        "ℹ️  Domain complete - no jobs found",
-                        extra={
-                            "domain": website,
-                            "progress": f"{idx}/{len(domains)}"
-                        }
-                    )
-                
-                # Call progress callback if provided
-                if progress_callback:
-                    await progress_callback(idx, len(domains), jobs, all_jobs)
-                
-                # Update scrape run progress after each domain
-                if run_id:
-                    update_scrape_run(run_id, {
-                        "last_domain": website,
-                        "domains_completed": idx
-                    })
+                # Create a new isolated browser context for this domain
+                context = None
+                page = None
+                try:
+                    context = await scraper.browser.new_context()
+                    page = await context.new_page()
                     
-            except Exception as e:
-                failed_count += 1
-                logger.error(
-                    "❌ Domain failed",
-                    extra={
-                        "domain": website,
-                        "error": str(e),
-                        "progress": f"{idx}/{len(domains)}"
-                    },
-                    exc_info=False
-                )
-                
-                # Call progress callback even on failure
-                if progress_callback:
-                    await progress_callback(idx, len(domains), [], all_jobs)
-            finally:
-                # Always close the browser context after each domain
-                if page:
-                    await page.close()
-                if context:
-                    await context.close()
-    finally:
-        # Always shutdown the browser after all domains are processed
-        await scraper.shutdown()
-        
-        # Mark scrape run as finished
-        if run_id:
-            update_scrape_run(run_id, {"active": False})
+                    # Scrape the domain using the isolated context's page, passing run_id
+                    jobs = await scraper.scrape_domain(website, company_name, page=page, run_id=run_id)
+                    all_jobs.extend(jobs)
+                    
+                    if jobs:
+                        success_count += 1
+                        logger.info(
+                            "✅ Domain complete",
+                            extra={
+                                "domain": website,
+                                "jobs_found": len(jobs),
+                                "progress": f"{idx}/{total_domains}"
+                            }
+                        )
+                    else:
+                        logger.info(
+                            "ℹ️  Domain complete - no jobs found",
+                            extra={
+                                "domain": website,
+                                "progress": f"{idx}/{total_domains}"
+                            }
+                        )
+                    
+                    # Call progress callback if provided
+                    if progress_callback:
+                        await progress_callback(idx, total_domains, jobs, all_jobs)
+                    
+                    # Update scrape run progress after each domain
+                    if run_id:
+                        update_scrape_run(run_id, {
+                            "last_domain": website,
+                            "domains_completed": idx
+                        })
+                        
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(
+                        "❌ Domain failed",
+                        extra={
+                            "domain": website,
+                            "error": str(e),
+                            "progress": f"{idx}/{total_domains}"
+                        },
+                        exc_info=False
+                    )
+                    
+                    # Call progress callback even on failure
+                    if progress_callback:
+                        await progress_callback(idx, total_domains, [], all_jobs)
+                finally:
+                    # Always close the browser context after each domain
+                    if page:
+                        await page.close()
+                    if context:
+                        await context.close()
+        finally:
+            # Always shutdown the browser after each batch is processed
+            logger.info(f"Shutting down browser after batch {batch_start + 1}-{batch_end}")
+            await scraper.shutdown()
+    
+    # Mark scrape run as finished
+    if run_id:
+        update_scrape_run(run_id, {"active": False})
     
     duration = (datetime.utcnow() - start_time).total_seconds()
     
