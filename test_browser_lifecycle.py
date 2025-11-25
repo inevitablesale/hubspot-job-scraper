@@ -1,11 +1,12 @@
 """
-Test browser lifecycle management with single browser instance and multiple contexts.
+Test browser lifecycle management with browser restart every 5 domains.
 
 Tests:
-- Single browser instance for all domains
-- Isolated browser context per domain
+- Browser restart every 5 domains (batch processing)
+- Isolated browser context per domain within each batch
 - Proper cleanup of contexts
 - Backward compatibility with page parameter
+- Batch logging for browser startup/shutdown
 """
 
 import asyncio
@@ -106,8 +107,8 @@ async def test_scrape_domain_backward_compatibility():
 
 
 @pytest.mark.asyncio
-async def test_scrape_all_domains_single_browser():
-    """Test that scrape_all_domains uses a single browser instance."""
+async def test_scrape_all_domains_batch_browser_restart():
+    """Test that scrape_all_domains restarts browser every 5 domains (batch processing)."""
     # Create a temporary domains file
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
         domains = [
@@ -118,24 +119,31 @@ async def test_scrape_all_domains_single_browser():
         domains_file = f.name
     
     try:
-        # Verify the single browser pattern implementation by inspecting source
+        # Verify the batch browser restart pattern implementation by inspecting source
         # This validates that the code structure matches our design:
-        # single scraper instance + contexts per domain
+        # browser initialized/shutdown per batch + contexts per domain within batch
         import inspect
         source = inspect.getsource(scrape_all_domains)
         
-        # Verify single scraper initialization (not in loop)
-        assert 'scraper = JobScraper()' in source
-        assert 'await scraper.initialize()' in source
+        # Verify batch processing structure
+        assert 'BATCH_SIZE = 5' in source, "Batch size should be 5"
+        assert 'for batch_start in range(0, total_domains, BATCH_SIZE)' in source, "Should iterate in batches"
         
-        # Verify context creation in loop
+        # Verify browser lifecycle is inside batch loop
+        assert 'await scraper.initialize()' in source
+        assert 'await scraper.shutdown()' in source
+        
+        # Verify batch logging messages
+        assert 'Starting browser for batch' in source, "Should log browser startup per batch"
+        assert 'Shutting down browser after batch' in source, "Should log browser shutdown per batch"
+        
+        # Verify context creation in domain loop (inside batch)
         assert 'context = await scraper.browser.new_context()' in source
         assert 'page = await context.new_page()' in source
         
         # Verify cleanup
         assert 'await page.close()' in source
         assert 'await context.close()' in source
-        assert 'await scraper.shutdown()' in source
         
     finally:
         # Clean up temp file
@@ -185,6 +193,20 @@ def test_page_parameter_type_hints():
     sig = inspect.signature(scraper.scrape_domain)
     assert 'page' in sig.parameters, "page parameter should be in signature"
     assert sig.parameters['page'].default is None, "page parameter should default to None"
+
+
+def test_batch_remainder_handling():
+    """Test that batch processing handles remainder domains correctly (e.g., 12 domains = 2 full batches + 2 remaining)."""
+    import inspect
+    source = inspect.getsource(scrape_all_domains)
+    
+    # Verify the batch end calculation handles remainder correctly
+    assert 'batch_end = min(batch_start + BATCH_SIZE, total_domains)' in source, \
+        "Should calculate batch_end with min() to handle remainder"
+    
+    # Verify batch logging uses correct indices
+    assert 'batch_start + 1' in source, "Should use 1-indexed batch start for logging"
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
